@@ -1,4 +1,4 @@
---[[ LOTRIX VX - STEAL AN EGG | Client only | v2.2 ]]
+--[[ LOTRIX VX - STEAL AN EGG | Client only | v2.3 ]]
 local Players=game:GetService("Players")
 local UIS=game:GetService("UserInputService")
 local TS=game:GetService("TweenService")
@@ -21,7 +21,7 @@ local CFG={
 }
 
 -- state
-local S={alert={on=false,conns={},chase={},hooked={},token=0},trapAuto={on=false}}
+local S={alert={on=false,conns={},chase={},hooked={},token=0},trapAuto={on=false},speed={on=false,val=100,base=16}}
 local alive,conns,F=true,{},{}
 local statusLabel
 local function track(c) conns[#conns+1]=c return c end
@@ -167,6 +167,48 @@ function F.trapAuto(on)
  return true,"أي فخ جديد يُحذف من شاشتك تلقائياً (محلي فقط)","warn"
 end
 
+-- walk speed: moves your own character only (not the game's speed stat)
+local function fmt(n) return string.format("%g",n) end
+local function parseNum(t)
+ t=tostring(t or "")
+ for i=0,9 do t=t:gsub("\217"..string.char(160+i),tostring(i)) end
+ return tonumber((t:gsub("%s","")))
+end
+local function getHum()
+ local c=LP.Character
+ return c and c:FindFirstChildOfClass("Humanoid")
+end
+local function hookSpeed(h)
+ disc(S.speed.hc)
+ S.speed.hc=h:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+  if S.speed.on and h.WalkSpeed~=S.speed.val then h.WalkSpeed=S.speed.val end
+ end)
+end
+function F.speed(on)
+ local sp=S.speed
+ if on then
+  local h=getHum()
+  if not h then return false,"لا توجد شخصية حالياً","warn" end
+  if h.WalkSpeed>0 and h.WalkSpeed~=sp.val then sp.base=h.WalkSpeed end
+  sp.on=true
+  hookSpeed(h)
+  h.WalkSpeed=sp.val
+  return true,"سرعة المشي "..fmt(sp.val).." مفعّلة - لحركة شخصيتك فقط وقد يعيدها السيرفر","warn"
+ end
+ sp.on=false
+ disc(sp.hc) sp.hc=nil
+ local h=getHum()
+ if h then h.WalkSpeed=sp.base end
+ return true,"تم إيقاف السرعة","info"
+end
+function F.setSpeed(v)
+ local sp=S.speed
+ sp.val=math.clamp(v,1,1000)
+ local h=getHum()
+ if sp.on and h then h.WalkSpeed=sp.val end
+ return sp.val
+end
+
 -- ui helpers
 local function new(cls,props,parent)
  local o=Instance.new(cls)
@@ -180,7 +222,7 @@ local function label(p,t,sz,col,bold,al)
  return new("TextLabel",{BackgroundTransparency=1,Text=t,TextSize=sz or 14,TextColor3=col or C.text,Font=bold and Enum.Font.GothamBold or Enum.Font.SourceSans,TextWrapped=true,TextXAlignment=al or Enum.TextXAlignment.Right},p)
 end
 
-local DW,DH=250,206
+local DW,DH=250,266
 local gui=new("ScreenGui",{Name=CFG.Name,ResetOnSpawn=false,IgnoreGuiInset=true,DisplayOrder=999,ZIndexBehavior=Enum.ZIndexBehavior.Sibling},host)
 local uiScale=new("UIScale",{},gui)
 local function rescale()
@@ -256,6 +298,7 @@ local function toggleCard(y,txt,desc,fn)
   paint()
   notify(msg or (ok and "تم" or "فشل"),kind or (ok and "ok" or "err"))
  end)
+ return c,d
 end
 
 -- 1) guard alert (read only)
@@ -273,6 +316,27 @@ toggleCard(102,"حذف الفخاخ","حذف الفخاخ من شاشتك وأي
  return F.trapAuto(false)
 end)
 
+-- 3) walk speed with a value box
+do
+ local c,d=toggleCard(162,"سرعة المشي","سرعة حركة شخصيتك فقط (ليست رقم السرعة في اللعبة)",function(on)
+  return F.speed(on)
+ end)
+ d.Size=UDim2.new(1,-124,0,26)
+ local tb=new("TextBox",{Size=UDim2.fromOffset(54,22),Position=UDim2.new(0,58,.5,-11),BackgroundColor3=C.panel,Text=fmt(S.speed.val),PlaceholderText="1-1000",TextSize=13,Font=Enum.Font.GothamBold,TextColor3=C.g2,ClearTextOnFocus=false},c)
+ corner(tb,6) stroke(tb,C.gd)
+ tb.FocusLost:Connect(function()
+  local v=parseNum(tb.Text)
+  if not v then
+   tb.Text=fmt(S.speed.val)
+   notify("اكتب رقماً بين 1 و 1000","err")
+   return
+  end
+  v=F.setSpeed(v)
+  tb.Text=fmt(v)
+  notify("تم ضبط السرعة على "..fmt(v),"ok")
+ end)
+end
+
 local floatB=new("TextButton",{Size=UDim2.fromOffset(44,44),Position=UDim2.new(0,12,.5,-22),BackgroundColor3=C.g,Text="L",TextSize=24,Font=Enum.Font.GothamBlack,TextColor3=C.bg,Visible=false,AutoButtonColor=false},gui)
 corner(floatB,22) stroke(floatB,C.white,2)
 hideB.MouseButton1Click:Connect(function() main.Visible=false floatB.Visible=true end)
@@ -281,13 +345,23 @@ floatB.MouseButton1Click:Connect(function() main.Visible=true floatB.Visible=fal
 local function cleanup()
  if not alive then return end
  alive=false
- pcall(F.alert,false) pcall(F.trapAuto,false)
+ pcall(F.alert,false) pcall(F.trapAuto,false) pcall(F.speed,false)
  for _,c in ipairs(conns) do disc(c) end
  pcall(function() gui:Destroy() end)
  ENV._LOTRIX_EGG_CLEANUP=nil
 end
 ENV._LOTRIX_EGG_CLEANUP=cleanup
 closeB.MouseButton1Click:Connect(function() notify("تم الإغلاق","info") task.delay(.15,cleanup) end)
+
+track(LP.CharacterAdded:Connect(function(ch)
+ task.spawn(function()
+  local h=ch:WaitForChild("Humanoid",10)
+  if not h or not alive then return end
+  task.wait(.3)
+  if ch~=LP.Character then return end
+  if S.speed.on then hookSpeed(h) h.WalkSpeed=S.speed.val end
+ end)
+end))
 
 local function intro()
  local g=new("CanvasGroup",{Size=UDim2.fromScale(1,1),BackgroundColor3=Color3.fromRGB(8,6,4),ZIndex=50},gui)
