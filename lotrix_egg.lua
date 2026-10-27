@@ -1,4 +1,4 @@
---[[ LOTRIX VX - STEAL AN EGG | Client only | v2.3 ]]
+--[[ LOTRIX VX - STEAL AN EGG | Client only | v2.4 ]]
 local Players=game:GetService("Players")
 local UIS=game:GetService("UserInputService")
 local TS=game:GetService("TweenService")
@@ -280,8 +280,8 @@ end
 local function toggleCard(y,txt,desc,fn)
  local c=new("Frame",{Size=UDim2.new(1,-16,0,54),Position=UDim2.fromOffset(8,y),BackgroundColor3=C.card},main)
  corner(c,10) stroke(c,C.gd)
- local t=label(c,txt,13,C.text,true) t.Size=UDim2.new(1,-66,0,18) t.Position=UDim2.fromOffset(6,5)
- local d=label(c,desc,10,C.sub) d.Size=UDim2.new(1,-66,0,26) d.Position=UDim2.fromOffset(6,23) d.TextYAlignment=Enum.TextYAlignment.Top
+ local t=label(c,txt,13,C.text,true) t.Size=UDim2.new(1,-68,0,18) t.Position=UDim2.fromOffset(62,5)
+ local d=label(c,desc,10,C.sub) d.Size=UDim2.new(1,-68,0,26) d.Position=UDim2.fromOffset(62,23) d.TextYAlignment=Enum.TextYAlignment.Top
  local sw=new("TextButton",{Size=UDim2.fromOffset(46,24),Position=UDim2.new(0,8,.5,-12),BackgroundColor3=C.off,Text="",AutoButtonColor=false},c)
  corner(sw,12)
  local kn=new("Frame",{Size=UDim2.fromOffset(18,18),Position=UDim2.new(0,3,.5,-9),BackgroundColor3=C.white},sw) corner(kn,9)
@@ -318,10 +318,10 @@ end)
 
 -- 3) walk speed with a value box
 do
- local c,d=toggleCard(162,"سرعة المشي","سرعة حركة شخصيتك فقط (ليست رقم السرعة في اللعبة)",function(on)
+ local c,d=toggleCard(162,"سرعة المشي","مشي شخصيتك فقط (ليست سرعة اللعبة)",function(on)
   return F.speed(on)
  end)
- d.Size=UDim2.new(1,-124,0,26)
+ d.Size=UDim2.new(1,-124,0,26) d.Position=UDim2.fromOffset(118,23)
  local tb=new("TextBox",{Size=UDim2.fromOffset(54,22),Position=UDim2.new(0,58,.5,-11),BackgroundColor3=C.panel,Text=fmt(S.speed.val),PlaceholderText="1-1000",TextSize=13,Font=Enum.Font.GothamBold,TextColor3=C.g2,ClearTextOnFocus=false},c)
  corner(tb,6) stroke(tb,C.gd)
  tb.FocusLost:Connect(function()
