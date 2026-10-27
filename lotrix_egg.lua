@@ -1,10 +1,10 @@
---[[ LOTRIX VX - STEAL AN EGG | Client only | v2.1 ]]
+--[[ LOTRIX VX - STEAL AN EGG | Client only | v2.2 ]]
 local Players=game:GetService("Players")
-local RS=game:GetService("RunService")
 local UIS=game:GetService("UserInputService")
 local TS=game:GetService("TweenService")
 local WS=game:GetService("Workspace")
 local CG=game:GetService("CoreGui")
+local SG=game:GetService("StarterGui")
 local LP=Players.LocalPlayer
 if not LP then return end
 local ENV=(getgenv and getgenv()) or _G
@@ -17,12 +17,11 @@ if type(ENV._LOTRIX_EGG_CLEANUP)=="function" then pcall(ENV._LOTRIX_EGG_CLEANUP)
 -- settings
 local CFG={
  Name="LOTRIX_VX_EGG",
- GuardWords={"guardian","guard","boss","oni","gorilla","monster","حارس","وحش"},
- TrapWords={"trap","snare","فخ"},
+ TrapWords={"trap","snare"},
 }
 
 -- state
-local S={freeze={on=false,list={},saved={}},anti={on=false},trapAuto={on=false}}
+local S={alert={on=false,conns={},chase={},hooked={},token=0},trapAuto={on=false}}
 local alive,conns,F=true,{},{}
 local statusLabel
 local function track(c) conns[#conns+1]=c return c end
@@ -40,8 +39,9 @@ local function notify(t,k)
   statusLabel.TextColor3=KC[k or "info"] or C.sub
  end
 end
-local function getChar() return LP.Character end
-local function getHum() local c=LP.Character return c and c:FindFirstChildOfClass("Humanoid") end
+local function popup(t)
+ pcall(function() SG:SetCore("SendNotification",{Title="LOTRIX VX",Text=tostring(t),Duration=4}) end)
+end
 
 local function hasWord(name,words)
  local n=string.lower(name)
@@ -78,49 +78,74 @@ do
  end
 end
 
--- guards: local freeze (the server decides chasing, so this may not change it)
-local function guardModels()
- local l={}
- for _,d in ipairs(WS:GetDescendants()) do
-  if d:IsA("Model") and hasWord(d.Name,CFG.GuardWords) and not inChar(d) and d:FindFirstChildOfClass("Humanoid") then l[#l+1]=d end
- end
- return l
+-- guard alert: read only. The server decides the chase, so this only warns you.
+local function isMe(v)
+ if v==nil or v=="" then return false end
+ return tostring(v)==tostring(LP.UserId)
 end
-local function unfreeze()
- for h,v in pairs(S.freeze.saved) do
-  pcall(function()
-   if h.Parent then
-    h.WalkSpeed=v.ws h.JumpPower=v.jp
-    local an=h:FindFirstChildOfClass("Animator")
-    if an then for _,t in ipairs(an:GetPlayingAnimationTracks()) do t:AdjustSpeed(1) end end
+local function isGuard(d)
+ return d:IsA("Model") and d:GetAttribute("GuardState")~=nil
+end
+local function hookGuard(g)
+ local a=S.alert
+ if a.hooked[g] then return end
+ a.hooked[g]=true
+ a.conns[#a.conns+1]=g.AttributeChanged:Connect(function(k)
+  if not a.on then return end
+  if k=="WakeTargetPlayer" then
+   if isMe(g:GetAttribute(k)) then
+    notify("الحارس يصحى وهدفه أنت!","err")
+    popup("الحارس يصحى وهدفه أنت!")
    end
-  end)
- end
- S.freeze.saved={}
-end
-function F.freeze(on)
- local f=S.freeze
- disc(f.conn) f.conn=nil
- if not on then f.on=false unfreeze() return true,"تمت إعادة الحراس لحالتهم الأصلية عندك","info" end
- f.on=true f.acc=0 f.scan=0
- f.list=guardModels()
- f.conn=RS.Heartbeat:Connect(function(dt)
-  f.scan=f.scan+dt f.acc=f.acc+dt
-  if f.scan>=4 then f.scan=0 f.list=guardModels() end
-  if f.acc<.2 then return end
-  f.acc=0
-  for _,m in ipairs(f.list) do
-   local h=m.Parent and m:FindFirstChildOfClass("Humanoid")
-   if h then
-    if not f.saved[h] then f.saved[h]={ws=h.WalkSpeed,jp=h.JumpPower} end
-    h.WalkSpeed=0 h.JumpPower=0
-    local an=h:FindFirstChildOfClass("Animator")
-    if an then for _,t in ipairs(an:GetPlayingAnimationTracks()) do t:AdjustSpeed(0) end end
-    local r=h.RootPart if r then r.AssemblyLinearVelocity=Vector3.zero end
+  elseif k=="TargetPlayer" then
+   if isMe(g:GetAttribute(k)) then
+    if not a.chase[g] then
+     a.chase[g]=os.clock()
+     notify("حارس يلاحقك الآن!","err")
+     popup("حارس يلاحقك الآن!")
+    end
+   elseif a.chase[g] then
+    local d=math.floor(os.clock()-a.chase[g])
+    a.chase[g]=nil
+    notify("انتهت الملاحقة بعد "..d.." ثانية","info")
+    popup("انتهت الملاحقة بعد "..d.." ثانية")
    end
   end
  end)
- return true,"جُمّد "..#f.list.." حارس ظاهر عندك (محلياً فقط)","warn"
+end
+function F.alert(on)
+ local a=S.alert
+ a.on=on
+ a.token=a.token+1
+ for _,c in ipairs(a.conns) do disc(c) end
+ a.conns={} a.chase={} a.hooked={}
+ disc(a.add) a.add=nil
+ if not on then return true,"تم إيقاف تنبيه الحارس","info" end
+ local n=0
+ for _,d in ipairs(WS:GetDescendants()) do
+  if isGuard(d) then n=n+1 hookGuard(d) end
+ end
+ if n==0 then
+  a.on=false
+  return false,"لم أجد حراساً الآن - اقترب من منطقة حارس وجرّب","warn"
+ end
+ a.add=WS.DescendantAdded:Connect(function(d)
+  task.delay(.5,function()
+   if alive and a.on and d.Parent and isGuard(d) then hookGuard(d) end
+  end)
+ end)
+ local my=a.token
+ task.spawn(function()
+  while alive and a.on and a.token==my do
+   task.wait(1)
+   local first
+   for _,t0 in pairs(a.chase) do
+    if not first or t0<first then first=t0 end
+   end
+   if first then notify("ملاحقة جارية: "..math.floor(os.clock()-first).." ث","warn") end
+  end
+ end)
+ return true,"تنبيه الحارس مفعّل - "..n.." حارس تحت المراقبة (قراءة فقط)","ok"
 end
 
 -- traps: local removal
@@ -140,40 +165,6 @@ function F.trapAuto(on)
   end)
  end)
  return true,"أي فخ جديد يُحذف من شاشتك تلقائياً (محلي فقط)","warn"
-end
-
--- anti ragdoll / knockback on my character
-local MOVERS={BodyVelocity=1,BodyForce=1,BodyGyro=1,BodyPosition=1,BodyAngularVelocity=1,BodyThrust=1,LinearVelocity=1,VectorForce=1,AngularVelocity=1,AlignPosition=1,AlignOrientation=1,LineForce=1,Torque=1}
-local function hookAnti(ch)
- disc(S.anti.hc)
- S.anti.hc=ch.DescendantAdded:Connect(function(d)
-  if S.anti.on and MOVERS[d.ClassName] then
-   task.defer(function() pcall(function() d:Destroy() end) end)
-  end
- end)
-end
-function F.anti(on)
- local a=S.anti a.on=on disc(a.conn) a.conn=nil
- if not on then disc(a.hc) a.hc=nil return true,"تم إيقاف منع الترنح","info" end
- if getChar() then hookAnti(getChar()) end
- a.conn=RS.Heartbeat:Connect(function()
-  local h=getHum() if not h then return end
-  local st=h:GetState()
-  if st==Enum.HumanoidStateType.Ragdoll or st==Enum.HumanoidStateType.FallingDown then h:ChangeState(Enum.HumanoidStateType.GettingUp) end
-  if h.PlatformStand then h.PlatformStand=false end
- end)
- return true,"منع الترنح والدفع مفعّل","warn"
-end
-
--- respawn handling
-local function onChar(ch)
- task.spawn(function()
-  local h=ch:WaitForChild("Humanoid",10)
-  if not h or not alive then return end
-  task.wait(.3)
-  if ch~=LP.Character or not alive then return end
-  if S.anti.on then hookAnti(ch) end
- end)
 end
 
 -- ui helpers
@@ -267,12 +258,9 @@ local function toggleCard(y,txt,desc,fn)
  end)
 end
 
--- 1) boss protection: local guard freeze + anti ragdoll
-toggleCard(42,"منع ضرب الزعماء","تجميد الحراس عندك ومنع الترنح والدفع (قد لا يوقف ملاحقة السيرفر)",function(on)
- local _,m1,k1=F.freeze(on)
- F.anti(on)
- if not on then return true,"تم الإيقاف","info" end
- return true,m1.." + منع الترنح","warn"
+-- 1) guard alert (read only)
+toggleCard(42,"تنبيه الحارس","ينبّهك لما يستهدفك حارس ويعرض مدة الملاحقة (قراءة فقط)",function(on)
+ return F.alert(on)
 end)
 -- 2) trap removal
 toggleCard(102,"حذف الفخاخ","حذف الفخاخ من شاشتك وأي فخ جديد تلقائياً",function(on)
@@ -293,16 +281,13 @@ floatB.MouseButton1Click:Connect(function() main.Visible=true floatB.Visible=fal
 local function cleanup()
  if not alive then return end
  alive=false
- pcall(F.freeze,false) pcall(F.trapAuto,false) pcall(F.anti,false)
+ pcall(F.alert,false) pcall(F.trapAuto,false)
  for _,c in ipairs(conns) do disc(c) end
  pcall(function() gui:Destroy() end)
  ENV._LOTRIX_EGG_CLEANUP=nil
 end
 ENV._LOTRIX_EGG_CLEANUP=cleanup
 closeB.MouseButton1Click:Connect(function() notify("تم الإغلاق","info") task.delay(.15,cleanup) end)
-
-track(LP.CharacterAdded:Connect(onChar))
-if LP.Character then onChar(LP.Character) end
 
 local function intro()
  local g=new("CanvasGroup",{Size=UDim2.fromScale(1,1),BackgroundColor3=Color3.fromRGB(8,6,4),ZIndex=50},gui)
