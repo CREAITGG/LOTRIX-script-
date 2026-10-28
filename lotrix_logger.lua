@@ -95,13 +95,14 @@ local function hookChar(ch)
  end)
 end
 local lastPos
+local onBeat_last=0
 local acc,gacc=0,0
 local function onBeat(dt)
  if not rec then return end
  local ch=LP.Character local r=ch and ch:FindFirstChild("HumanoidRootPart")
  if r then
   local v=r.AssemblyLinearVelocity.Magnitude
-  if v>90 then add(string.format("ME speed spike %.0f studs/s",v)) end
+  if v>90 and os.clock()-(onBeat_last or 0)>1.5 then onBeat_last=os.clock() add(string.format("ME speed spike %.0f studs/s",v)) end
   if lastPos and (r.Position-lastPos).Magnitude>40 then add(string.format("ME jump %.0f studs (انتقال/سحب)",(r.Position-lastPos).Magnitude)) end
   lastPos=r.Position
  end

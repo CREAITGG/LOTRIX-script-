@@ -36,6 +36,7 @@ local S={speed={on=false,val=CFG.SpeedDefault,base=16},
  freeze={on=false,list={},saved={}},anti={on=false,removed=0,fixed=0},
  trapAuto={on=false},busy=false}
 local alive,conns,UI,F=true,{},{},{}
+S.gs={}
 local statusLabel,statVal
 local function track(c) conns[#conns+1]=c return c end
 local function disc(c) if c then pcall(function() c:Disconnect() end) end end
@@ -75,7 +76,7 @@ local KEYMAP={
  {{"time","timer","remain","countdown"},"الوقت","time"},
  {{"money","cash","income","coin","earn","profit","produc","reward","worth","value","price","gold"},"المال","money"},
  {{"rarity","tier","grade"},"الندرة","text"},
- {{"pet","animal","creature","monster","inside","content","hatch"},"الحيوان","text"},
+ {{"pet","animal","creature","monster","inside","content","hatch","assetcategory"},"الحيوان","text"},
  {{"owner","player","user"},"المالك","text"},
  {{"name","type","kind"},"الاسم","text"},
 }
@@ -148,7 +149,7 @@ local PETS={
  {"Dodo","دودو"},{"Pterodactyl","تيروداكتيل"},{"Ankylosaurus","أنكيلوصور","Mythic",120000},{"Triceratops","ترايسيراتوبس"},{"Bronto","برونتو","Cosmic",1.5e6},{"Tralaledon","ترالاليدون"},{"T.Rex","تي ريكس","Eternal"},{"Mosasaurus","موصور","Eternal"},
  {"Centapede","ألف رجل"},{"Cosmic Gecko","وزغة كونية"},{"Cosmic Gorilla","غوريلا كونية"},{"La Vacca Saturno Saturnita","لا فاكا ساتورنو ساتورنيتا"},{"Cosmic Dragon","تنين كوني"},{"Cosmic Skeleton Boss","زعيم الهيكل الكوني"},{"Eternal Lunar Dragon","تنين القمر الأبدي","Eternal"},{"Unicorn","وحيد القرن","Divine",3.2e10},
  {"Tung Tung Sahur","تونغ تونغ ساهور"},{"Bananita Dolphinita","بنانيتا دولفينيتا"},{"Belula Beluga","بيلولا بيلوغا"},{"Mangolini Parrochini","مانغوليني باروكيني"},{"Bomboclat Crocolat","بومبوكلات كروكولات"},{"Strawberry Elephant","فيل الفراولة"},
- {"Kitsune","كيتسوني","Divine",4.8e10},{"Night Flame","اللهب الليلي","Divine",8e10},{"Archangel","رئيس الملائكة","Divine",2.27e11},{"World Burner","محرق العالم","Divine",5e11},{"Aetherion","إيثيريون","Divine",7.1e11},{"Royal Sky Whale","حوت السماء الملكي","Divine",4.22e11},
+ {"Cave Dragon","تنين الكهف"},{"Kitsune","كيتسوني","Divine",4.8e10},{"Night Flame","اللهب الليلي","Divine",8e10},{"Archangel","رئيس الملائكة","Divine",2.27e11},{"World Burner","محرق العالم","Divine",5e11},{"Aetherion","إيثيريون","Divine",7.1e11},{"Royal Sky Whale","حوت السماء الملكي","Divine",4.22e11},
 }
 local function normTxt(s) return " "..string.lower(tostring(s)):gsub("[^%w]+"," ").." " end
 for _,p in ipairs(PETS) do p.k=normTxt(p[1]) end
@@ -189,24 +190,21 @@ local GB={
  {{"lake","swan"},"البحيرة","البجعة","900"},
  {{"forest","chicken"},"الغابة","الدجاجة","0"},
 }
+local AREA={
+ ["Enchanted Forest"]={"الغابة المسحورة","أرواح الغابة","50B"},["Abyss Ocean"]={"المحيط العميق","حارس الأعماق","2.5M"},
+ ["Cosmic"]={"الكون","الحارس الكوني","700M"},["Volcano"]={"البركان","سيربيروس","700K"},["Snow"]={"الثلج","اليتي","170K"},
+ ["Forest"]={"الغابة","الدجاجة","0"},["Cherry Blossom"]={"زهر الكرز","كيتسوني","2.5B"},["Desert"]={"الصحراء","العقرب","10K"},
+ ["Prehistoric"]={"ما قبل التاريخ","تي ريكس","18M"},["Light Dark"]={"الملائكة والشياطين","حراس النور والظلام","20B"},
+ ["Jungle"]={"الأدغال","النمر","40K"},["Lake"]={"البحيرة","البجعة","900"},["Titan Temple"]={"معبد العمالقة","الغوريلا العملاق","7B"},
+}
+local GSTATE={Sleeping="نائم 😴",Waking="يستيقظ ⚠",Chasing="يطاردك 🚨",RetrievingEgg="يسترجع البيضة"}
 local function guardText(inst)
- local hay,o={},inst
- for _=1,8 do
-  if not o or o==WS or o==game then break end
-  hay[#hay+1]=string.lower(o.Name) o=o.Parent
- end
- local n=0
- for _,d in ipairs(inst:GetDescendants()) do
-  n=n+1 if n>80 then break end
-  hay[#hay+1]=string.lower(d.Name)
- end
- local t=table.concat(hay," ")
- for _,e in ipairs(GB) do
-  for _,k in ipairs(e[1]) do
-   if string.find(t,k,1,true) then return "👹 حارس "..e[3].." — "..e[2].."\nالسرعة المطلوبة: "..e[4].." • "..distTo(inst).." م" end
-  end
- end
- return "👹 حارس (البيوم غير محدد)\n"..(inst.Parent and inst.Parent.Name or "؟").." • "..distTo(inst).." م"
+ local area=inst:GetAttribute("AreaId")
+ local st=inst:GetAttribute("GuardState")
+ local e=area and AREA[area]
+ local stT=st and (GSTATE[st] or tostring(st)) or "؟"
+ if e then return "👹 حارس "..e[2].." — "..e[1].."\nالحالة: "..stT.." • السرعة: "..e[3].." • "..distTo(inst).." م" end
+ return "👹 حارس "..tostring(area or inst.Name).."\nالحالة: "..stT.." • "..distTo(inst).." م"
 end
 
 ---------------- السرعة ----------------
@@ -251,7 +249,7 @@ local KIND={
 local function matchKind(kind,d)
  local K=KIND[kind]
  if kind=="guard" then
-  return d:IsA("Model") and not inChar(d) and hasWord(d.Name,CFG.GuardWords)
+  return d:IsA("Model") and not inChar(d) and d:GetAttribute("GuardState")~=nil
  end
  if isTarget(d,K.words,K.modelOnly) then return true end
  if kind=="egg" and d:IsA("Model") and not inChar(d) and not inTread(d) and findPet(d.Name,true) then return true end
@@ -345,6 +343,15 @@ function F.esp(kind,on)
  return true,"تم كشف "..n.." من "..ar,"ok"
 end
 local function tick()
+ if S.esp.guard.on then
+  for inst in pairs(S.esp.guard.map) do
+   local st=inst:GetAttribute("GuardState")
+   if S.gs[inst]~=st then
+    if S.gs[inst]~=nil and (st=="Waking" or st=="Chasing") then notify("🚨 حارس "..tostring(inst:GetAttribute("AreaId") or "؟").." : "..(GSTATE[st] or st),"err") end
+    S.gs[inst]=st
+   end
+  end
+ end
  for kind,st in pairs(S.esp) do
   if st.on then for inst,e in pairs(st.map) do if e.l and e.l.Parent then e.l.Text=labelText(kind,inst) end end end
  end
