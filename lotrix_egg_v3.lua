@@ -176,7 +176,7 @@ end
 -- الحراس: بيوم → الحارس والسرعة المطلوبة (من أدلة الويب)
 local GB={
  {{"enchant"},"الغابة المسحورة","أرواح الغابة","50B"},
- {{"angel","demon"},"الملائكة والشياطين","حراس الملائكة والشياطين","20B"},
+ {{"angel","demon","light dark","lightdark"},"الملائكة والشياطين","حراس الملائكة والشياطين","20B"},
  {{"titan","temple"},"معبد العمالقة","الغوريلا العملاق","7B"},
  {{"cherry","blossom","kitsune"},"زهر الكرز","كيتسوني","2.5B"},
  {{"cosmic"},"الكون","الحارس الكوني","700M"},
@@ -400,20 +400,43 @@ end
 
 ---------------- الحراس: تجميد محلي (تجريبي) ----------------
 local function guardModels()
- local l={}
- for _,d in ipairs(WS:GetDescendants()) do
-  if d:IsA("Model") and hasWord(d.Name,CFG.GuardWords) and d.Name~="Map" and not inChar(d) and not inTread(d) and d:FindFirstChildOfClass("Humanoid") then l[#l+1]=d end
+ local l,seen={},{}
+ local function add(d)
+  if d:IsA("Model") and not seen[d] and not inChar(d) and not inTread(d) then seen[d]=true l[#l+1]=d end
+ end
+ -- المسار المعروف: Workspace.World.Areas.GuardAreas.<المنطقة>.Guard
+ local w=WS:FindFirstChild("World")
+ local ar=w and w:FindFirstChild("Areas")
+ local ga=ar and ar:FindFirstChild("GuardAreas")
+ if ga then
+  for _,d in ipairs(ga:GetDescendants()) do
+   if d:IsA("Model") and hasWord(d.Name,CFG.GuardWords) then add(d) end
+  end
+ end
+ if #l==0 then
+  for _,d in ipairs(WS:GetDescendants()) do
+   if d:IsA("Model") and hasWord(d.Name,CFG.GuardWords) and d.Name~="Map" and d:FindFirstChildOfClass("Humanoid") then add(d) end
+  end
  end
  return l
 end
+local function stopAnims(m)
+ for _,an in ipairs(m:GetDescendants()) do
+  if an:IsA("Animator") then
+   for _,t in ipairs(an:GetPlayingAnimationTracks()) do pcall(function() t:AdjustSpeed(0) end) end
+  end
+ end
+end
 local function sleepOne(m)
  local h=m:FindFirstChildOfClass("Humanoid")
- local root=m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
- if not root then return end
+ local root=m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart",true)
+ if not root then return false end
  local sv=S.freeze.saved[m]
  if not sv then
-  sv={root=root,h=h,a=root.Anchored,o=root.Orientation,ps=h and h.PlatformStand,ws=h and h.WalkSpeed}
+  sv={root=root,h=h,o=root.Orientation,ps=h and h.PlatformStand,ws=h and h.WalkSpeed,parts={}}
   S.freeze.saved[m]=sv
+  if h then h.PlatformStand=true h.WalkSpeed=0 end
+  root.Orientation=Vector3.new(0,sv.o.Y,90)
   local head=m:FindFirstChild("Head") or root
   if not head:FindFirstChild("LotrixZzz") then
    pcall(function()
@@ -424,13 +447,22 @@ local function sleepOne(m)
   end
  end
  if h then h.PlatformStand=true h.WalkSpeed=0 end
- root.Orientation=Vector3.new(0,sv.o.Y,90)
+ for _,d in ipairs(m:GetDescendants()) do
+  if d:IsA("BasePart") then
+   if sv.parts[d]==nil then sv.parts[d]=d.Anchored end
+   d.Anchored=true
+   if d:IsA("BasePart") then d.AssemblyLinearVelocity=Vector3.zero end
+  end
+ end
  root.Anchored=true
+ stopAnims(m)
+ return true
 end
 local function unfreeze()
  for m,sv in pairs(S.freeze.saved) do
   pcall(function()
-   sv.root.Anchored=sv.a sv.root.Orientation=sv.o
+   for p,a in pairs(sv.parts) do pcall(function() p.Anchored=a end) end
+   sv.root.Orientation=sv.o
    if sv.h then sv.h.PlatformStand=sv.ps sv.h.WalkSpeed=sv.ws end
    if sv.z then sv.z:Destroy() end
   end)
@@ -441,9 +473,11 @@ function F.freeze(on)
  local f=S.freeze
  if not on then f.on=false disc(f.conn) f.conn=nil unfreeze() return true,"أُيقظ الحراس عندك","info" end
  f.list=guardModels()
- if #f.list==0 then return false,"لا حراس ظاهرون باسم Guard — اقترب منهم","warn" end
+ if #f.list==0 then return false,"لا حراس محمّلون عندك — اقترب من منطقة الحارس (اللعبة تحمّل الأشياء القريبة فقط)","warn" end
  f.on=true f.acc=0 disc(f.conn)
- for _,m in ipairs(f.list) do pcall(sleepOne,m) end
+ local okc=0
+ for _,m in ipairs(f.list) do local okp,r=pcall(sleepOne,m) if okp and r then okc=okc+1 end end
+ if okc==0 then f.on=false disc(f.conn) f.conn=nil return false,"وجدت "..#f.list.." حارساً لكن لا جزء قابل للتجميد","err" end
  f.conn=RS.Heartbeat:Connect(function(dt)
   f.acc=f.acc+dt
   if f.acc<1.5 then return end
@@ -451,7 +485,7 @@ function F.freeze(on)
   f.list=guardModels()
   for _,m in ipairs(f.list) do pcall(sleepOne,m) end
  end)
- return true,"نُوّم "..#f.list.." حارس على شاشتك (تجميد + نوم). السيرفر قد يظل يحرّكهم لك، جرّب وراقب","warn"
+ return true,"نُوّم "..okc.." من "..#f.list.." حارس على شاشتك. إن بقي يتحرك فالسيرفر هو من يحرّكه، أخبرني بما ترى","warn"
 end
 
 ---------------- الفخاخ: إزالة محلية ----------------
