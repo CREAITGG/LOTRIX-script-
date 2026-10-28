@@ -261,6 +261,7 @@ end
 local function eggInfo(inst)
  local other,money,seen={},{},{}
  local cat=inst:GetAttribute("AssetCategory")
+ local muts
  local pet=cat and (findPet(tostring(cat),false) or {tostring(cat),tostring(cat)}) or findPet(inst.Name,false)
  local function put(k,v)
   if type(v)~="number" and type(v)~="string" then return end
@@ -285,8 +286,18 @@ local function eggInfo(inst)
   n=n+1 if n>70 or (#other+#money)>=7 then break end
   if d:IsA("ValueBase") and (d:IsA("StringValue") or d:IsA("NumberValue") or d:IsA("IntValue")) then put(d.Name,d.Value)
   elseif (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text~="" and #d.Text<50 then other[#other+1]="• "..trAnimal(d.Text) end
+  if d:IsA("StringValue") and string.find(string.lower(d.Name),"record",1,true) then
+   pcall(function()
+    local t=game:GetService("HttpService"):JSONDecode(d.Value)
+    if type(t)=="table" and t.Category then
+     cat=tostring(t.Category)
+     if type(t.Mutations)=="table" and #t.Mutations>0 then muts=table.concat(t.Mutations,"، ") end
+    end
+   end)
+  end
   for k,v in pairs(d:GetAttributes()) do put(k,v) end
  end
+ if cat then pet=findPet(tostring(cat),false) or {tostring(cat),tostring(cat)} end
  if not pet then
   local m=0
   for _,d in ipairs(inst:GetDescendants()) do
@@ -295,7 +306,7 @@ local function eggInfo(inst)
    if pet then break end
   end
  end
- if pet then return petLine(pet) end
+ if pet then return petLine(pet)..(muts and ("\nالطفرات: "..muts) or "") end
  if #other==0 and #money==0 then return "لا بيانات ظاهرة للعميل — لم أتعرف على الحيوان" end
  local out={}
  for i=1,math.min(3,#other) do out[#out+1]=other[i] end
@@ -411,7 +422,11 @@ function F.eggSchema()
    local at=d:GetAttributes()
    for k in pairs(at) do
     local l=string.lower(k)
-    if string.find(l,"asset",1,true) or string.find(l,"egg",1,true) or string.find(l,"nestid",1,true) or string.find(l,"mutation",1,true) or l=="uid" then hits[#hits+1]={d=d,dd=dist(d)} break end
+    if string.find(l,"assetcategory",1,true) or string.find(l,"nestid",1,true) or string.find(l,"eggrecord",1,true) or string.find(l,"eggid",1,true) or string.find(l,"egguid",1,true) then
+     local fn=string.lower(d:GetFullName())
+     if not string.find(fn,"mount",1,true) and not inChar(d) then hits[#hits+1]={d=d,dd=dist(d)} end
+     break
+    end
    end
   end
  end
