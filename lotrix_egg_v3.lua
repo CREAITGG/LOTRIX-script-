@@ -15,11 +15,12 @@ if type(ENV._SARAB_EGG_CLEANUP)=="function" then pcall(ENV._SARAB_EGG_CLEANUP) e
 local CFG={
  Name="LOTRIX_VX_EGG",Ver="v3.0",
  EggWords={"egg","بيض"},
- GuardWords={"guardian","guard","boss","oni","gorilla","حارس","وحش","monster"},
+ GuardWords={"guard","boss","حارس"},
  TrapWords={"trap","snare","فخ"},
  SpeedMin=1,SpeedMax=250,SpeedDefault=100,
  -- أسماء عربية للحيوانات والوحوش (إنجليزي ← عربي). أضف ما تريد
  Animals={
+  {"forestguard","حارس الغابة"},{"eggholder","حامل البيض"},{"guard","حارس"},
   {"oni tiger","نمر الأوني"},{"gorilla king","ملك الغوريلا"},{"gorilla","غوريلا"},{"oni","أوني"},{"tiger","نمر"},
   {"dragon","تنين"},{"wolf","ذئب"},{"fox","ثعلب"},{"bear","دب"},{"lion","أسد"},{"panda","باندا"},
   {"cat","قطة"},{"dog","كلب"},{"bird","طائر"},{"duck","بطة"},{"chicken","دجاجة"},{"rabbit","أرنب"},
@@ -106,7 +107,17 @@ local function inChar(i)
  end
  return false
 end
+local function inTread(i)
+ local o=i
+ for _=1,10 do
+  if not o or o==WS then return false end
+  if string.find(string.lower(o.Name),"treadmill",1,true) then return true end
+  o=o.Parent
+ end
+ return false
+end
 local function isTarget(inst,words,modelOnly)
+ if inTread(inst) then return false end
  if not (inst:IsA("Model") or (not modelOnly and inst:IsA("BasePart"))) then return false end
  if not hasWord(inst.Name,words) then return false end
  if inst:IsA("BasePart") and inst.Parent and inst.Parent:IsA("Model") and hasWord(inst.Parent.Name,words) then return false end
@@ -120,6 +131,82 @@ local function distTo(i)
  local r,p=getRoot(),primary(i)
  if r and p then return math.floor((r.Position-p.Position).Magnitude) end
  return 0
+end
+
+
+---------------- قاعدة البيانات (من أدلة الويب، غير رسمية) ----------------
+local RAR={Common="عادي",Uncommon="غير شائع",Rare="نادر",Epic="ملحمي",Legendary="أسطوري",Mythic="خرافي",Cosmic="كوني",Secret="سري",Eternal="أبدي",Divine="إلهي"}
+-- {اسم إنجليزي, عربي, الندرة, الدخل في الثانية}
+local PETS={
+ {"Chicken","دجاجة","Common",1},{"Dog","كلب","Common",2},{"Bird","طائر","Uncommon",8},{"Owl","بومة","Rare",35},{"Raccoon","راكون","Rare",45},{"Fox","ثعلب","Epic",180},{"Brr Brr Patapim","بر بر باتابيم","Legendary",1800},
+ {"Frog","ضفدع","Common",3},{"Duckling","فرخ بط"},{"Catfish","سمكة السلور","Uncommon",12},{"Turtle","سلحفاة","Rare",60},{"Trulimero Trulicina","ترولميرو ترولتشينا","Epic",260},{"Swan","بجعة"},{"Axolotl","أكسولوتل"},{"Leviathan","لوياثان"},
+ {"Jerboa","جربوع","Common",6},{"Fennec","ثعلب الفنك"},{"Camel","جمل","Rare",75},{"Tob Tobi Tob Tob","توب توبي توب توب"},{"Snake","أفعى"},{"Scorpion","عقرب"},{"Sand Spider","عنكبوت الرمال","Mythic",16000},{"Royal Sphinx","أبو الهول الملكي"},
+ {"Toucan","طوقان","Rare",110},{"Chimpanzee","شمبانزي","Rare",90},{"Crocodile","تمساح","Epic",420},{"Gorilla","غوريلا","Legendary",4800},{"Orangutini Ananassini","أورانغوتيني أناناسيني","Legendary",5500},{"Spider","عنكبوت","Mythic",22000},{"Tiger","نمر"},{"King Snake","ملك الأفاعي","Secret",3e6},
+ {"Penguin","بطريق"},{"Walrus","فظ","Epic",600},{"Polar Bear","دب قطبي","Legendary",7000},{"Sabertooth Tiger","نمر سيف الأسنان","Mythic",35000},{"Mammoth","ماموث","Mythic",42000},{"King Mammoth","ملك الماموث","Cosmic",4e5},{"Yeti","يتي"},{"Ice Dragon","تنين الجليد","Eternal"},
+ {"Lava Gecko","وزغة اللافا"},{"Lava Frog","ضفدع اللافا","Epic",850},{"Flaming Bull","ثور ناري","Legendary",9500},{"Lava Iguana","إغوانا اللافا","Legendary",11000},{"Chillin Chilli","تشيلين تشيلي","Mythic",55000},{"Cerberus","سيربيروس","Secret",8e6},{"Phoenix","طائر الفينيق"},{"Lava Dragon","تنين اللافا","Eternal",1e8},
+ {"Parrotfish","سمكة الببغاء","Rare",220},{"Swordfish","سمكة السيف","Epic",1100},{"Shark","قرش","Legendary",15000},{"Orca","أوركا","Mythic",80000},{"Whale Shark","قرش الحوت","Cosmic",7e5},{"Beluga Whale","حوت بيلوغا","Cosmic",8.5e5},{"Kraken","كراكن","Secret"},{"El Maja","إل ماجا"},
+ {"Dodo","دودو"},{"Pterodactyl","تيروداكتيل"},{"Ankylosaurus","أنكيلوصور","Mythic",120000},{"Triceratops","ترايسيراتوبس"},{"Bronto","برونتو","Cosmic",1.5e6},{"Tralaledon","ترالاليدون"},{"T.Rex","تي ريكس","Eternal"},{"Mosasaurus","موصور","Eternal"},
+ {"Centapede","ألف رجل"},{"Cosmic Gecko","وزغة كونية"},{"Cosmic Gorilla","غوريلا كونية"},{"La Vacca Saturno Saturnita","لا فاكا ساتورنو ساتورنيتا"},{"Cosmic Dragon","تنين كوني"},{"Cosmic Skeleton Boss","زعيم الهيكل الكوني"},{"Eternal Lunar Dragon","تنين القمر الأبدي","Eternal"},{"Unicorn","وحيد القرن","Divine",3.2e10},
+ {"Tung Tung Sahur","تونغ تونغ ساهور"},{"Bananita Dolphinita","بنانيتا دولفينيتا"},{"Belula Beluga","بيلولا بيلوغا"},{"Mangolini Parrochini","مانغوليني باروكيني"},{"Bomboclat Crocolat","بومبوكلات كروكولات"},{"Strawberry Elephant","فيل الفراولة"},
+ {"Kitsune","كيتسوني","Divine",4.8e10},{"Night Flame","اللهب الليلي","Divine",8e10},{"Archangel","رئيس الملائكة","Divine",2.27e11},{"World Burner","محرق العالم","Divine",5e11},{"Aetherion","إيثيريون","Divine",7.1e11},{"Royal Sky Whale","حوت السماء الملكي","Divine",4.22e11},
+}
+local function normTxt(s) return " "..string.lower(tostring(s)):gsub("[^%w]+"," ").." " end
+for _,p in ipairs(PETS) do p.k=normTxt(p[1]) end
+local function findPet(text,exact)
+ local t=normTxt(text)
+ local best,bl
+ for _,p in ipairs(PETS) do
+  local hit
+  if exact then hit=(t==p.k) else hit=(string.find(t,p.k,1,true)~=nil) end
+  if hit and (not bl or #p.k>bl) then best,bl=p,#p.k end
+ end
+ return best
+end
+local function petLine(p)
+ local out={"🐾 "..p[2]..(p[3] and (" — "..(RAR[p[3]] or p[3])) or "")}
+ if p[4] then
+  local pre=(p[3]=="Divine") and "حتى ~" or "~"
+  out[#out+1]='<font color="#3CFF8C">💰 '..pre..abbr(p[4]).."/ث • "..abbr(p[4]*60).."/د</font>"
+ else
+  out[#out+1]="💰 الدخل غير معروف في الأدلة"
+ end
+ return table.concat(out,"\n")
+end
+
+-- الحراس: بيوم → الحارس والسرعة المطلوبة (من أدلة الويب)
+local GB={
+ {{"enchant"},"الغابة المسحورة","أرواح الغابة","50B"},
+ {{"angel","demon"},"الملائكة والشياطين","حراس الملائكة والشياطين","20B"},
+ {{"titan","temple"},"معبد العمالقة","الغوريلا العملاق","7B"},
+ {{"cherry","blossom","kitsune"},"زهر الكرز","كيتسوني","2.5B"},
+ {{"cosmic"},"الكون","الحارس الكوني","700M"},
+ {{"prehistoric","trex","t-rex","rex"},"ما قبل التاريخ","تي ريكس","18M"},
+ {{"abyss","ocean","deepsea"},"المحيط العميق","حارس الأعماق","2.5M"},
+ {{"volcano","cerberus","lava"},"البركان","سيربيروس","700K"},
+ {{"snow","yeti","ice"},"الثلج","اليتي","170K"},
+ {{"jungle","tiger"},"الأدغال","النمر","40K"},
+ {{"desert","scorpion","sand"},"الصحراء","العقرب","10K"},
+ {{"lake","swan"},"البحيرة","البجعة","900"},
+ {{"forest","chicken"},"الغابة","الدجاجة","0"},
+}
+local function guardText(inst)
+ local hay,o={},inst
+ for _=1,8 do
+  if not o or o==WS or o==game then break end
+  hay[#hay+1]=string.lower(o.Name) o=o.Parent
+ end
+ local n=0
+ for _,d in ipairs(inst:GetDescendants()) do
+  n=n+1 if n>80 then break end
+  hay[#hay+1]=string.lower(d.Name)
+ end
+ local t=table.concat(hay," ")
+ for _,e in ipairs(GB) do
+  for _,k in ipairs(e[1]) do
+   if string.find(t,k,1,true) then return "👹 حارس "..e[3].." — "..e[2].."\nالسرعة المطلوبة: "..e[4].." • "..distTo(inst).." م" end
+  end
+ end
+ return "👹 حارس (البيوم غير محدد)\n"..(inst.Parent and inst.Parent.Name or "؟").." • "..distTo(inst).." م"
 end
 
 ---------------- السرعة ----------------
@@ -164,12 +251,15 @@ local KIND={
 local function matchKind(kind,d)
  local K=KIND[kind]
  if kind=="guard" then
-  return d:IsA("Model") and not inChar(d) and (hasWord(d.Name,CFG.GuardWords) or d:FindFirstChildOfClass("Humanoid")~=nil)
+  return d:IsA("Model") and not inChar(d) and hasWord(d.Name,CFG.GuardWords)
  end
- return isTarget(d,K.words,K.modelOnly)
+ if isTarget(d,K.words,K.modelOnly) then return true end
+ if kind=="egg" and d:IsA("Model") and not inChar(d) and not inTread(d) and findPet(d.Name,true) then return true end
+ return false
 end
 local function eggInfo(inst)
  local other,money,seen={},{},{}
+ local pet=findPet(inst.Name,false)
  local function put(k,v)
   if type(v)~="number" and type(v)~="string" then return end
   if v=="" then return end
@@ -195,7 +285,16 @@ local function eggInfo(inst)
   elseif (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text~="" and #d.Text<50 then other[#other+1]="• "..trAnimal(d.Text) end
   for k,v in pairs(d:GetAttributes()) do put(k,v) end
  end
- if #other==0 and #money==0 then return "لا بيانات ظاهرة للعميل" end
+ if not pet then
+  local m=0
+  for _,d in ipairs(inst:GetDescendants()) do
+   m=m+1 if m>70 then break end
+   pet=findPet(d.Name,false)
+   if pet then break end
+  end
+ end
+ if pet then return petLine(pet) end
+ if #other==0 and #money==0 then return "لا بيانات ظاهرة للعميل — لم أتعرف على الحيوان" end
  local out={}
  for i=1,math.min(3,#other) do out[#out+1]=other[i] end
  for i=1,math.min(2,#money) do out[#out+1]='<font color="#3CFF8C">'..money[i]..'</font>' end
@@ -203,7 +302,7 @@ local function eggInfo(inst)
 end
 local function labelText(kind,inst)
  if kind=="egg" then return "🥚 بيضة\n"..eggInfo(inst) end
- if kind=="guard" then return "👹 "..trAnimal(inst.Name).."\n"..distTo(inst).." م" end
+ if kind=="guard" then return guardText(inst) end
  return "⚠ فخ — "..distTo(inst).." م"
 end
 local function rmESP(kind,inst)
@@ -303,45 +402,56 @@ end
 local function guardModels()
  local l={}
  for _,d in ipairs(WS:GetDescendants()) do
-  if d:IsA("Model") and hasWord(d.Name,CFG.GuardWords) and not inChar(d) and d:FindFirstChildOfClass("Humanoid") then l[#l+1]=d end
+  if d:IsA("Model") and hasWord(d.Name,CFG.GuardWords) and d.Name~="Map" and not inChar(d) and not inTread(d) and d:FindFirstChildOfClass("Humanoid") then l[#l+1]=d end
  end
  return l
 end
+local function sleepOne(m)
+ local h=m:FindFirstChildOfClass("Humanoid")
+ local root=m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
+ if not root then return end
+ local sv=S.freeze.saved[m]
+ if not sv then
+  sv={root=root,h=h,a=root.Anchored,o=root.Orientation,ps=h and h.PlatformStand,ws=h and h.WalkSpeed}
+  S.freeze.saved[m]=sv
+  local head=m:FindFirstChild("Head") or root
+  if not head:FindFirstChild("LotrixZzz") then
+   pcall(function()
+    local at=Instance.new("Attachment") at.Name="LotrixZzz" at.Parent=head
+    local z=Instance.new("ParticleEmitter") z.Texture="rbxassetid://134015502" z.Lifetime=NumberRange.new(2,3) z.Speed=NumberRange.new(1,2) z.Rate=2 z.Size=NumberSequence.new(.6,1.2) z.Parent=at
+    sv.z=at
+   end)
+  end
+ end
+ if h then h.PlatformStand=true h.WalkSpeed=0 end
+ root.Orientation=Vector3.new(0,sv.o.Y,90)
+ root.Anchored=true
+end
 local function unfreeze()
- for h,v in pairs(S.freeze.saved) do
+ for m,sv in pairs(S.freeze.saved) do
   pcall(function()
-   if h.Parent then
-    h.WalkSpeed=v.ws h.JumpPower=v.jp
-    local an=h:FindFirstChildOfClass("Animator")
-    if an then for _,t in ipairs(an:GetPlayingAnimationTracks()) do t:AdjustSpeed(1) end end
-   end
+   sv.root.Anchored=sv.a sv.root.Orientation=sv.o
+   if sv.h then sv.h.PlatformStand=sv.ps sv.h.WalkSpeed=sv.ws end
+   if sv.z then sv.z:Destroy() end
   end)
  end
  S.freeze.saved={}
 end
 function F.freeze(on)
  local f=S.freeze
- if not on then f.on=false disc(f.conn) f.conn=nil unfreeze() return true,"تمت إعادة الحراس لحالتهم الأصلية عندك","info" end
+ if not on then f.on=false disc(f.conn) f.conn=nil unfreeze() return true,"أُيقظ الحراس عندك","info" end
  f.list=guardModels()
- if #f.list==0 then return false,"لا يوجد حراس ظاهرون بهذه الأسماء — استخدم «اكتشاف أسماء الحراس»","warn" end
- f.on=true f.acc=0 f.scan=0 disc(f.conn)
+ if #f.list==0 then return false,"لا حراس ظاهرون باسم Guard — اقترب منهم","warn" end
+ f.on=true f.acc=0 disc(f.conn)
+ for _,m in ipairs(f.list) do pcall(sleepOne,m) end
  f.conn=RS.Heartbeat:Connect(function(dt)
-  f.scan=f.scan+dt f.acc=f.acc+dt
-  if f.scan>=3 then f.scan=0 f.list=guardModels() end
-  if f.acc<.2 then return end
+  f.acc=f.acc+dt
+  if f.acc<1.5 then return end
   f.acc=0
-  for _,m in ipairs(f.list) do
-   local h=m.Parent and m:FindFirstChildOfClass("Humanoid")
-   if h then
-    if not f.saved[h] then f.saved[h]={ws=h.WalkSpeed,jp=h.JumpPower} end
-    h.WalkSpeed=0 h.JumpPower=0
-    local an=h:FindFirstChildOfClass("Animator")
-    if an then for _,t in ipairs(an:GetPlayingAnimationTracks()) do t:AdjustSpeed(0) end end
-    local r=h.RootPart if r then r.AssemblyLinearVelocity=Vector3.zero end
-   end
-  end
+  f.list=guardModels()
+  for _,m in ipairs(f.list) do pcall(sleepOne,m) end
  end)
- return true,"جُمّد "..#f.list.." حارس عندك — قد لا يؤثر على السيرفر، راقب إن توقفوا فعلاً","warn"
+ return true,"نُوّم "..#f.list.." حارس على شاشتك (تجميد + نوم). السيرفر قد يظل يحرّكهم لك، جرّب وراقب","warn"
 end
 
 ---------------- الفخاخ: إزالة محلية ----------------
@@ -432,7 +542,7 @@ function F.stealAll()
    local txt=string.lower(d.ActionText.." "..d.ObjectText)
    local chain=(own and own.Name or "").." "..((own and own.Parent) and own.Parent.Name or "")
    local isSteal=string.find(txt,"steal",1,true) or string.find(txt,"سرق",1,true) or string.find(txt,"grab",1,true) or string.find(txt,"take",1,true)
-   if (isSteal or hasWord(chain,CFG.EggWords)) and not inChar(d) then
+   if (isSteal or hasWord(chain,CFG.EggWords)) and not inChar(d) and not inTread(d) then
     local p=own and primary(own)
     if p then T[#T+1]={d=d,p=p.Position} end
    end
@@ -688,8 +798,9 @@ toggleCard("حذف الفخاخ","يحذف الفخاخ من الأرض الآن
  end
  return F.trapAuto(false)
 end)
+toggleCard("تنويم الزعماء","يجمّد الحراس نائمين عندك فقط (لا يتأثر اللاعبون الآخرون)",function(on) return F.freeze(on) end)
 section("الحركة")
-local spc=card("قيمة السرعة","من 1 إلى "..CFG.SpeedMax)
+local spc=card("قيمة السرعة","1 إلى "..CFG.SpeedMax.." — فوق 300 يعيدك السيرفر")
 local box=new("TextBox",{Size=UDim2.fromOffset(64,28),Position=UDim2.new(0,8,.5,-14),BackgroundColor3=C.panel,Text=tostring(CFG.SpeedDefault),TextSize=14,Font=Enum.Font.GothamBold,TextColor3=C.g2,ClearTextOnFocus=false},spc)
 corner(box,8) stroke(box,C.g,1,.3)
 local function readSpeed()
@@ -711,7 +822,7 @@ section("السرقة")
 buttonCard("سرقة كل البيض","ينقلك لكل بيضة ويسرقها، والحراس مجمّدون عندك",function() return F.stealAll() end)
 section("الكشف")
 toggleCard("كشف الزعماء (كل الماب)","اسم عربي + المسافة فوق كل زعيم وحارس",function(on) return F.esp("guard",on) end)
-toggleCard("كشف البيض والمال","الحيوان والمال بالأخضر (K M B T Q) ثانية ودقيقة",function(on) return F.esp("egg",on) end)
+toggleCard("كشف البيض والمال","الحيوان والندرة والدخل بالأخضر (K M B T Q) ثانية ودقيقة",function(on) return F.esp("egg",on) end)
 buttonCard("نسخ أسماء الزعماء","ينسخ كل أسماء الشخصيات للحافظة",function() return F.npcNames() end)
 buttonCard("بيانات أقرب بيضة","ينسخ بنية البيضة لضبط الأسماء",function() return F.eggSchema() end)
 do
