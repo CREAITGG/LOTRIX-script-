@@ -117,8 +117,11 @@ local function inTread(i)
  end
  return false
 end
+local NOISE={eggfitbounds=1,eggpoint=1,eggbounds=1}
+local function isNoise(i) return NOISE[string.lower(i.Name)]~=nil end
 local function isTarget(inst,words,modelOnly)
- if inTread(inst) then return false end
+ if inTread(inst) or isNoise(inst) then return false end
+ if (inst:IsA("Model") or inst:IsA("BasePart")) and inst:GetAttribute("AssetCategory")~=nil and not inChar(inst) then return true end
  if not (inst:IsA("Model") or (not modelOnly and inst:IsA("BasePart"))) then return false end
  if not hasWord(inst.Name,words) then return false end
  if inst:IsA("BasePart") and inst.Parent and inst.Parent:IsA("Model") and hasWord(inst.Parent.Name,words) then return false end
@@ -257,7 +260,8 @@ local function matchKind(kind,d)
 end
 local function eggInfo(inst)
  local other,money,seen={},{},{}
- local pet=findPet(inst.Name,false)
+ local cat=inst:GetAttribute("AssetCategory")
+ local pet=cat and (findPet(tostring(cat),false) or {tostring(cat),tostring(cat)}) or findPet(inst.Name,false)
  local function put(k,v)
   if type(v)~="number" and type(v)~="string" then return end
   if v=="" then return end
@@ -385,24 +389,55 @@ function F.trapNames()
 end
 function F.eggSchema()
  local r=getRoot() if not r then return false,"لا توجد شخصية حالياً" end
+ local out={}
+ local function dist(i) local p=primary(i) return p and (p.Position-r.Position).Magnitude or 1e9 end
+ local function dump(i,tag,maxn)
+  out[#out+1]=tag.." "..path(i).." ["..i.ClassName.."]"
+  for k,v in pairs(i:GetAttributes()) do out[#out+1]="   attr "..k.."="..tostring(v) end
+  local n=0
+  for _,d in ipairs(i:GetDescendants()) do
+   n=n+1 if n>maxn then out[#out+1]="   ..." break end
+   local s2="  "..d.ClassName..": "..d.Name
+   if d:IsA("ValueBase") then s2=s2.." = "..tostring(d.Value) end
+   if d:IsA("TextLabel") or d:IsA("TextButton") then s2=s2.." = '"..d.Text.."'" end
+   out[#out+1]=s2
+   for k,v in pairs(d:GetAttributes()) do out[#out+1]="     attr "..k.."="..tostring(v) end
+  end
+ end
+ -- 1) كل شيء له صفات تشبه البيض (الأقرب أولاً)
+ local hits={}
+ for _,d in ipairs(WS:GetDescendants()) do
+  if d:IsA("Model") or d:IsA("BasePart") or d:IsA("Folder") then
+   local at=d:GetAttributes()
+   for k in pairs(at) do
+    local l=string.lower(k)
+    if string.find(l,"asset",1,true) or string.find(l,"egg",1,true) or string.find(l,"nestid",1,true) or string.find(l,"mutation",1,true) or l=="uid" then hits[#hits+1]={d=d,dd=dist(d)} break end
+   end
+  end
+ end
+ table.sort(hits,function(x,y) return x.dd<y.dd end)
+ out[#out+1]="== عناصر بصفات البيض ("..#hits..") =="
+ for i=1,math.min(5,#hits) do dump(hits[i].d,"EGGATTR",25) end
+ -- 2) أقرب عش كامل
+ local nest,nd
+ for _,d in ipairs(WS:GetDescendants()) do
+  if d:IsA("Model") and string.find(string.lower(d.Name),"nest",1,true) then
+   local dd=dist(d) if not nd or dd<nd then nest,nd=d,dd end
+  end
+ end
+ out[#out+1]="== أقرب عش =="
+ if nest then dump(nest,"NEST",60) else out[#out+1]="لا عش" end
+ -- 3) أقرب عنصر باسم egg
  local best,bd
  for _,d in ipairs(WS:GetDescendants()) do
-  if isTarget(d,CFG.EggWords,false) then local p=primary(d) if p then local dd=(p.Position-r.Position).Magnitude if not bd or dd<bd then best,bd=d,dd end end end
+  if (d:IsA("Model") or d:IsA("BasePart")) and hasWord(d.Name,CFG.EggWords) and not inChar(d) and not inTread(d) and not isNoise(d) then
+   local dd=dist(d) if not bd or dd<bd then best,bd=d,dd end
+  end
  end
- if not best then return false,"لا يوجد بيض ظاهر — اقترب من بيضة","warn" end
- local out={"egg: "..path(best).." ["..best.ClassName.."]"}
- for k,v in pairs(best:GetAttributes()) do out[#out+1]=" attr "..k.."="..tostring(v) end
- local n=0
- for _,d in ipairs(best:GetDescendants()) do
-  n=n+1 if n>80 then break end
-  local s=" "..d.ClassName..": "..d.Name
-  if d:IsA("ValueBase") then s=s.." = "..tostring(d.Value) end
-  if d:IsA("TextLabel") or d:IsA("TextButton") then s=s.." = '"..d.Text.."'" end
-  out[#out+1]=s
-  for k,v in pairs(d:GetAttributes()) do out[#out+1]="   attr "..k.."="..tostring(v) end
- end
+ out[#out+1]="== أقرب اسم egg =="
+ if best then dump(best,"EGG",40) else out[#out+1]="لا شيء" end
  local t=table.concat(out,"\n") print("[SARAB] "..t)
- return true,"بيانات أقرب بيضة"..(copyText(t) and " نُسخت للحافظة" or " (الكونسول F9)"),"ok"
+ return true,"بيانات البيض والعش"..(copyText(t) and " نُسخت للحافظة" or " (الكونسول F9)"),"ok"
 end
 
 ---------------- الحراس: تجميد محلي (تجريبي) ----------------
