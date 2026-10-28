@@ -350,10 +350,12 @@ local function refreshKind(kind)
  end)
 end
 function F.esp(kind,on)
+ if kind=="egg" then pcall(F.eggEvents,on) end
  S.esp[kind].on=on refreshKind(kind)
  local ar=KIND[kind].ar
  if not on then return true,"تم إيقاف كشف "..ar,"info" end
  local n=0 for _ in pairs(S.esp[kind].map) do n=n+1 end
+ if n==0 and kind=="egg" then return true,"تم التفعيل — أنتظر بيانات البيض من السيرفر (تظهر عند حركة البيض أو سرقته)","warn" end
  if n==0 then return true,"لا يوجد «"..ar.."» ظاهر الآن — قد يكون الاسم مختلفاً (استخدم أزرار الاكتشاف)","warn" end
  return true,"تم كشف "..n.." من "..ar,"ok"
 end
@@ -374,6 +376,100 @@ local function tick()
   local s=readStat()
   statVal.Text=s and (s.k.." = "..abbr(s.v)) or "غير متاح للعميل"
  end
+end
+
+---------------- كشف البيض من أحداث السيرفر (EggWorld) ----------------
+S.ev={on=false,hooks={},reg={},raw={},n=0}
+local function evShow(v,d)
+ d=d or 0
+ local t=typeof(v)
+ if t=="table" then
+  if d>=3 then return "{...}" end
+  local p,n={},0
+  for k,x in pairs(v) do n=n+1 if n>30 then p[#p+1]="..." break end p[#p+1]=tostring(k).."="..evShow(x,d+1) end
+  return "{"..table.concat(p,", ").."}"
+ elseif t=="CFrame" then local q=v.Position return string.format("CF(%.0f,%.0f,%.0f)",q.X,q.Y,q.Z)
+ elseif t=="Instance" then local ok,r=pcall(function() return v:GetFullName() end) return ok and r or tostring(v)
+ end
+ return tostring(v)
+end
+local function mutText(m)
+ if type(m)~="table" then return nil end
+ local l={}
+ for k,v in pairs(m) do
+  if type(v)=="string" then l[#l+1]=v elseif type(k)=="string" then l[#l+1]=k end
+ end
+ if #l==0 then return nil end
+ return table.concat(l,"، ")
+end
+local function paintEgg(key)
+ local rec=S.ev.reg[key]
+ local d=rec.data
+ local cf=d.BoundsCFrame or d.BottomCFrame
+ if typeof(cf)~="CFrame" then return end
+ if not rec.part then
+  local n=0 for _ in pairs(S.ev.reg) do n=n+1 end
+  if n>150 then return end
+  local pt=Instance.new("Part") pt.Name="LOTRIX_EggMark" pt.Anchored=true pt.CanCollide=false pt.CanQuery=false pt.CanTouch=false pt.Transparency=1 pt.Size=Vector3.new(1,1,1) pt.Parent=WS
+  local bb=Instance.new("BillboardGui") bb.Adornee=pt bb.Size=UDim2.fromOffset(230,96) bb.StudsOffset=Vector3.new(0,4,0) bb.AlwaysOnTop=true bb.MaxDistance=600 bb.Parent=espF
+  local ll=Instance.new("TextLabel") ll.BackgroundTransparency=1 ll.Size=UDim2.fromScale(1,1) ll.Font=Enum.Font.SourceSansBold ll.TextSize=15 ll.TextColor3=Color3.fromRGB(255,214,64) ll.TextStrokeTransparency=.3 ll.TextWrapped=true ll.RichText=true ll.Parent=bb
+  rec.part,rec.gui,rec.lbl=pt,bb,ll
+ end
+ rec.part.CFrame=cf
+ local cat=d.AssetCategory or d.Category
+ local pet=cat and (findPet(tostring(cat),false) or {tostring(cat),tostring(cat)})
+ local txt=pet and ("🥚 "..petLine(pet)) or "🥚 بيضة"
+ local mt=mutText(d.Mutations)
+ if mt then txt=txt.."\nالطفرات: "..mt end
+ if d.NestId then txt=txt.."\n"..tostring(d.NestId) end
+ rec.lbl.Text=txt
+end
+local function eggHandle(t)
+ if type(t)~="table" then return end
+ if not (t.AssetCategory or t.BoundsCFrame or t.Uid or t.Category) then return end
+ local key=tostring(t.NestId or t.Uid or "x")
+ local rec=S.ev.reg[key]
+ if not rec then rec={data={}} S.ev.reg[key]=rec end
+ for k,v in pairs(t) do rec.data[k]=v end
+ if t.Uid and t.NestId then S.ev.reg[tostring(t.Uid)]=rec end
+ pcall(paintEgg,key)
+end
+local function onEggEvent(...)
+ if not S.ev.on then return end
+ local args={...}
+ S.ev.n=S.ev.n+1
+ S.ev.raw[#S.ev.raw+1]=string.format("[%.1f] ",os.clock()%1000)..evShow(args)
+ while #S.ev.raw>60 do table.remove(S.ev.raw,1) end
+ for _,a in ipairs(args) do
+  if type(a)=="table" then
+   eggHandle(a)
+   for _,x in pairs(a) do if type(x)=="table" then eggHandle(x) end end
+  end
+ end
+end
+function F.eggEvents(on)
+ local e=S.ev
+ for _,c in ipairs(e.hooks) do disc(c) end e.hooks={}
+ e.on=on
+ if on then
+  for _,d in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+   if d:IsA("RemoteEvent") and string.find(d:GetFullName(),"EggWorld",1,true) then
+    pcall(function() e.hooks[#e.hooks+1]=d.OnClientEvent:Connect(onEggEvent) end)
+   end
+  end
+ else
+  local seen={}
+  for _,rec in pairs(e.reg) do
+   if not seen[rec] then seen[rec]=true pcall(function() rec.part:Destroy() end) pcall(function() rec.gui:Destroy() end) end
+  end
+  e.reg={}
+ end
+end
+function F.eggEventsCopy()
+ if #S.ev.raw==0 then return false,"لا أحداث بعد — فعّل كشف البيض وانتظر أو حرّك بيضة","warn" end
+ local t=table.concat(S.ev.raw,"\n")
+ print(t)
+ return true,"أحداث البيض ("..#S.ev.raw..")"..(copyText(t) and " نُسخت للحافظة" or " (الكونسول F9)"),"ok"
 end
 
 ---------------- أدوات الاكتشاف ----------------
@@ -954,6 +1050,7 @@ toggleCard("حذف الفخاخ","يحذف الفخاخ من الأرض الآن
  return F.trapAuto(false)
 end)
 section("أدوات")
+buttonCard("نسخ أحداث البيض","للفحص إن لم تظهر معلومات البيض",function() return F.eggEventsCopy() end)
 buttonCard("نسخ أسماء الزعماء","ينسخ كل أسماء الشخصيات للحافظة",function() return F.npcNames() end)
 buttonCard("بيانات أقرب بيضة","ينسخ بنية البيضة لضبط الأسماء",function() return F.eggSchema() end)
 
@@ -997,6 +1094,7 @@ local function cleanup()
  if not alive then return end
  alive=false
  for _,k in ipairs({"egg","guard","trap"}) do S.esp[k].on=false pcall(refreshKind,k) end
+ pcall(F.eggEvents,false)
  pcall(F.freeze,false) pcall(F.trapAuto,false) pcall(F.anti,false)
  S.speed.on=false disc(S.speed.guard) pcall(F.applySpeed)
  disc(S.anti.hc)
