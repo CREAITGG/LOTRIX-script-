@@ -472,6 +472,89 @@ function F.eggEventsCopy()
  return true,"أحداث البيض ("..#S.ev.raw..")"..(copyText(t) and " نُسخت للحافظة" or " (الكونسول F9)"),"ok"
 end
 
+---------------- تنويم الزعماء: مسار الانتقال عند سرقة بيضة + الطيران ----------------
+S.bossOn=false
+S.fly={on=false,speed=70,saved={}}
+local WAYPOINTS={
+ CFrame.new(4747.71,70.57,-335.25),
+ CFrame.new(3520.94,70.73,-343.74),
+ CFrame.new(2446.02,70.88,-351.18),
+ CFrame.new(1352.11,71.02,-358.75),
+ CFrame.new(544.49,71.13,-364.34),
+}
+local ROUTE_WAIT=0.4
+local route={busy=false}
+function F.bossRoute()
+ if route.busy or S.busy then return false end
+ local r=getRoot() if not r then return false end
+ route.busy=true
+ local origin=r.CFrame -- الموقع الأصلي قبل البدء
+ task.spawn(function()
+  local ok,err=pcall(function()
+   for _,cf in ipairs(WAYPOINTS) do
+    if not alive or not S.bossOn then break end
+    local rr=getRoot() if not rr then break end
+    rr.CFrame=cf rr.AssemblyLinearVelocity=Vector3.zero
+    task.wait(ROUTE_WAIT)
+   end
+  end)
+  local rr=getRoot()
+  if rr then rr.CFrame=origin rr.AssemblyLinearVelocity=Vector3.zero end
+  route.busy=false
+  if ok then notify("انتهى مسار التنويم وعدت لمكانك","ok") else notify("خطأ أثناء التنقل: "..tostring(err),"err") end
+ end)
+ return true
+end
+S.bossHooks={}
+function F.bossHook(on)
+ for _,c in ipairs(S.bossHooks) do disc(c) end S.bossHooks={}
+ if not on then return end
+ for _,d in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+  if d:IsA("RemoteEvent") and d.Name=="FieldEggCarry" then
+   pcall(function()
+    S.bossHooks[#S.bossHooks+1]=d.OnClientEvent:Connect(function(t)
+     if S.bossOn and type(t)=="table" and t.IsCarrying==true then F.bossRoute() end
+    end)
+   end)
+  end
+ end
+end
+local function flyStop()
+ local f=S.fly
+ disc(f.conn) f.conn=nil
+ pcall(function() if f.lv then f.lv:Destroy() end end)
+ pcall(function() if f.ao then f.ao:Destroy() end end)
+ pcall(function() if f.at then f.at:Destroy() end end)
+ f.lv,f.ao,f.at=nil,nil,nil
+ for p in pairs(f.saved) do pcall(function() p.CanCollide=true end) end
+ f.saved={}
+ local h=getHum() if h then pcall(function() h.PlatformStand=false end) end
+end
+function F.fly(on)
+ local f=S.fly
+ if not on then f.on=false flyStop() return true,"تم إيقاف الطيران","info" end
+ local r,h=getRoot(),getHum()
+ if not r or not h then return false,"لا توجد شخصية حالياً","err" end
+ flyStop() f.on=true
+ f.at=Instance.new("Attachment") f.at.Parent=r
+ f.lv=Instance.new("LinearVelocity") f.lv.Attachment0=f.at f.lv.RelativeTo=Enum.ActuatorRelativeTo.World f.lv.MaxForce=1e9 f.lv.VectorVelocity=Vector3.zero f.lv.Parent=r
+ f.ao=Instance.new("AlignOrientation") f.ao.Mode=Enum.OrientationAlignmentMode.OneAttachment f.ao.Attachment0=f.at f.ao.MaxTorque=1e9 f.ao.Responsiveness=30 f.ao.CFrame=r.CFrame.Rotation f.ao.Parent=r
+ h.PlatformStand=true
+ f.conn=RS.Heartbeat:Connect(function()
+  local rr,hh,cam=getRoot(),getHum(),WS.CurrentCamera
+  if not rr or not hh or not cam or not f.lv then return end
+  local loc=cam.CFrame:VectorToObjectSpace(hh.MoveDirection)
+  local v=cam.CFrame:VectorToWorldSpace(Vector3.new(loc.X,0,loc.Z))*f.speed
+  if hh.Jump then v=v+Vector3.new(0,f.speed,0) end
+  f.lv.VectorVelocity=v
+  local lk=cam.CFrame.LookVector
+  f.ao.CFrame=CFrame.new(Vector3.zero,Vector3.new(lk.X,0,lk.Z))
+  local ch=getChar()
+  if ch then for _,pt in ipairs(ch:GetDescendants()) do if pt:IsA("BasePart") and pt.CanCollide then f.saved[pt]=true pt.CanCollide=false end end end
+ end)
+ return true,"الطيران مفعّل: الاتجاه حيث تنظر الكاميرا، والقفز يرفعك، بدون تصادم. قد يعيدك السيرفر أو يعاقبك — على مسؤوليتك","warn"
+end
+
 ---------------- أدوات الاكتشاف ----------------
 local function path(i) local t,o={},i while o and o~=game and #t<7 do table.insert(t,1,o.Name) o=o.Parent end return table.concat(t,".") end
 function F.npcNames()
@@ -772,6 +855,7 @@ local function onChar(ch)
   task.wait(.3)
   if ch~=LP.Character or not alive then return end
   S.speed.base=h.WalkSpeed>0 and h.WalkSpeed or 16
+  if S.fly.on then pcall(F.fly,false) end
   disc(S.speed.guard)
   S.speed.guard=h:GetPropertyChangedSignal("WalkSpeed"):Connect(function() if S.speed.on and h.WalkSpeed~=S.speed.val then h.WalkSpeed=S.speed.val end end)
   if S.speed.on then F.applySpeed() end
@@ -1034,11 +1118,17 @@ toggleCard("تفعيل السرعة","مشي حقيقي لشخصيتك بالق�
  if on then local n=readSpeed() if not n then return false,"رقم السرعة غير صالح","err" end S.speed.val=n end
  return F.speed(on)
 end)
+toggleCard("الطيران بدون عوائق","يطير بك عبر الجدران حيث تنظر الكاميرا (محلي، قد يعيدك السيرفر)",function(on) return F.fly(on) end)
 
 ---- الصفحة: المميزات ----
 newPage("feat")
 section("الحراس والبيض")
-toggleCard("تنويم الزعماء","يجمّد الحراس نائمين عندك فقط (بصري)",function(on) return F.freeze(on) end)
+toggleCard("تنويم الزعماء","يجمّد الحراس عندك. عند سرقة بيضة ينقلك عبر 5 نقاط (0.4ث لكل نقطة) ثم يعيدك لمكانك",function(on)
+ S.bossOn=on F.bossHook(on)
+ local ok,m,k=F.freeze(on)
+ if on and not ok then return true,"مسار الانتقال مفعّل — لا حراس محمّلون الآن للتجميد","warn" end
+ return ok,m,k
+end)
 buttonCard("سرقة كل البيض","ينقلك لكل بيضة ويسرقها، والحراس مجمّدون عندك",function() return F.stealAll() end)
 section("الفخاخ")
 toggleCard("حذف الفخاخ","يحذف الفخاخ من الأرض الآن وأي فخ جديد",function(on)
@@ -1095,6 +1185,7 @@ local function cleanup()
  alive=false
  for _,k in ipairs({"egg","guard","trap"}) do S.esp[k].on=false pcall(refreshKind,k) end
  pcall(F.eggEvents,false)
+ S.bossOn=false pcall(F.bossHook,false) pcall(F.fly,false)
  pcall(F.freeze,false) pcall(F.trapAuto,false) pcall(F.anti,false)
  S.speed.on=false disc(S.speed.guard) pcall(F.applySpeed)
  disc(S.anti.hc)
