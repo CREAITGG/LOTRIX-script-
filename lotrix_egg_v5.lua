@@ -33,7 +33,7 @@ local ROUTE_WAIT=0.4
 ---------------- الحالة ----------------
 local S={busy=false,eggs={},sel=nil,carry=false,nextAt=0,scanning=false,
  freeze={on=false,list={},saved={}},bossOn=false,trap={on=false},mon={on=false,map={}},
- steal={on=false,token=0,active=false},ev={reg={},raw={},n=0,hooked={}}}
+ steal={on=false,token=0,active=false},ev={reg={},raw={},n=0,hooked={}},pen={eggs={},nextScan=0,lastBuild=0}}
 local alive,conns,F=true,{},{}
 local statusLabel
 local function track(c) conns[#conns+1]=c return c end
@@ -226,7 +226,25 @@ local function onCarry(t)
   if S.bossOn and not S.steal.active then F.bossRoute() end
  end
 end
+-- بيضك داخل العش: السيرفر يرسل لكل بيضة {uid, amount} (amount = دخلها بالثانية، مجموعها = زيادة مالك كل ثانية)
+local function onPen(list)
+ if type(list)~="table" then return end
+ for _,x in pairs(list) do
+  if type(x)=="table" and x.uid and type(x.amount)=="number" then
+   local u=tostring(x.uid)
+   local e=S.pen.eggs[u]
+   if not e then e={} S.pen.eggs[u]=e end
+   e.amount=x.amount e.t=os.clock()
+  end
+ end
+end
 local function hookEvents()
+ for _,d in ipairs(RepS:GetDescendants()) do
+  if d:IsA("RemoteEvent") and d.Name=="CoinsGathered" and not S.ev.hooked[d] then
+   S.ev.hooked[d]=true
+   pcall(function() track(d.OnClientEvent:Connect(onPen)) end)
+  end
+ end
  for _,d in ipairs(RepS:GetDescendants()) do
   if d:IsA("RemoteEvent") and not S.ev.hooked[d] and string.find(d:GetFullName(),"EggWorld",1,true) then
    S.ev.hooked[d]=true
@@ -991,11 +1009,11 @@ espF.Parent=host
 ---- الصفحة: الأدوات ----
 newPage("tools")
 section("الزعيم")
-toggleCard("نوم عميق للزعيم","يجمّد الحراس عندك، وعند سرقة بيضة ينقلك عبر 5 نقاط ثم يعيدك لمكانك",function(on) return F.boss(on) end)
+toggleCard("نوم عميق للزعيم","تجميد شكلي عندك + مسار الانتقال عند السرقة (السيرفر هو من يقرر الملاحقة)",function(on) return F.boss(on) end)
 section("الأرض")
 toggleCard("حذف الفخاخ","يحذف الفخاخ الآن وأي فخ جديد حتى لا تسقط البيضة",function(on) return F.traps(on) end)
 section("المال")
-toggleCard("كشف تجميع المال","فوق كل بيضة: اسمها ومنطقتها وكم تجمع (بالأخضر)",function(on) return F.money(on) end)
+toggleCard("كشف تجميع المال","فوق كل بيضة في الحقل: اسمها ومنطقتها ودخلها (بالأخضر)",function(on) return F.money(on) end)
 buttonCard("نسخ تقرير للدعم","للفحص إن لم تظهر البيانات أو الفخاخ",function() return F.report() end)
 noteText("كل شيء هنا يعمل على جهازك فقط. السيرفر هو الذي يقرر في النهاية.")
 
@@ -1051,8 +1069,72 @@ rebuildList=function()
 end
 rebuildList()
 
+---- الصفحة: بيضي (تجميع المال في عشك) ----
+newPage("pen")
+section("بيضك في العش")
+local sumF=new("Frame",{Size=UDim2.new(1,0,0,62),BackgroundColor3=C.card,LayoutOrder=nxt()},list)
+corner(sumF,10) stroke(sumF,C.gd,1,.4)
+local sumA=label(sumF,"بانتظار بيانات السيرفر...",15,C.money,true) sumA.Size=UDim2.new(1,-12,0,26) sumA.Position=UDim2.fromOffset(6,6)
+local sumB=label(sumF,"",11,C.sub,false) sumB.Size=UDim2.new(1,-12,0,24) sumB.Position=UDim2.fromOffset(6,34)
+local PENBASE=nxt()
+local penRows={}
+local function penList()
+ local out,now={},os.clock()
+ for u,e in pairs(S.pen.eggs) do
+  if now-(e.t or 0)<12 then out[#out+1]={u=u,e=e} else S.pen.eggs[u]=nil end
+ end
+ table.sort(out,function(a,b) return a.e.amount>b.e.amount end)
+ return out
+end
+local function resolvePenNames()
+ if os.clock()<S.pen.nextScan then return end
+ local need=false
+ for _,e in pairs(S.pen.eggs) do if not e.name then need=true break end end
+ if not need then return end
+ S.pen.nextScan=os.clock()+30
+ task.spawn(function()
+  local i=0
+  for _,d in ipairs(WS:GetDescendants()) do
+   i=i+1 if i%3000==0 then task.wait() end
+   if d:IsA("Model") or d:IsA("BasePart") then
+    local u=d:GetAttribute("Uid") or d:GetAttribute("PetUid") or d:GetAttribute("EggUid")
+    local e=u and S.pen.eggs[tostring(u)]
+    if e and not e.name then
+     local cat=d:GetAttribute("AssetCategory")
+     local pet=(cat and findPet(tostring(cat),false)) or findPet(d.Name,false)
+     if pet then e.name=pet[2] end
+    end
+   end
+  end
+ end)
+end
+local function penUpdate(rebuild)
+ local l=penList()
+ local tot=0
+ for _,x in ipairs(l) do tot=tot+x.e.amount end
+ if #l==0 then
+  sumA.Text="لا بيانات بعد"
+  sumB.Text="تصل كل ثانية من السيرفر عند وجود بيض في عشك"
+ else
+  sumA.Text="🥚 "..#l.." بيضة • 💰 "..abbr(tot).."/ث"
+  sumB.Text="≈ "..abbr(tot*60).."/د • "..abbr(tot*3600).."/ساعة"
+ end
+ if not rebuild then return end
+ for _,r in ipairs(penRows) do pcall(function() r:Destroy() end) end
+ penRows={}
+ for i,x in ipairs(l) do
+  if i>60 then break end
+  local row=new("Frame",{Size=UDim2.new(1,0,0,34),BackgroundColor3=C.card,LayoutOrder=PENBASE+i},pages.pen)
+  corner(row,9) stroke(row,C.gd,1,.5)
+  local t=label(row,"🥚 "..(x.e.name or ("بيضة "..i)).."  <font color=\"#3CFF8C\">"..abbr(x.e.amount).."/ث • "..abbr(x.e.amount*60).."/د</font>",12,C.text,true)
+  t.RichText=true t.Size=UDim2.new(1,-10,1,0) t.Position=UDim2.fromOffset(4,0)
+  penRows[#penRows+1]=row
+ end
+ pcall(resolvePenNames)
+end
 addTab("tools","🛠","الأدوات")
 addTab("eggs","🥚","تفريم البيض")
+addTab("pen","💰","بيضي")
 showPage("tools")
 
 -- الأيقونة العائمة (صورتك)
@@ -1095,6 +1177,7 @@ task.spawn(function()
   if cd.Parent then cd.Text=fmtTime(S.nextAt-os.clock()) end
   if S.nextAt>0 and os.clock()>=S.nextAt and not S.scanning and not S.steal.active then F.refresh(true) end
   if S.mon.on and n%5==0 then pcall(updateEspText) end
+  if pages.pen and pages.pen.Visible then pcall(penUpdate,n%3==0) end
   task.wait(1)
  end
 end)
