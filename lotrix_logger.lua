@@ -93,13 +93,14 @@ local function hookOutgoing()
    if rec and alive then
     local m=gm()
     if m=="FireServer" or m=="InvokeServer" then
+     local args,an={...},select("#",...)
      pcall(function()
       local nme=tostring(self.Name)
       local k="OUT "..nme
       perName[k]=(perName[k] or 0)+1
       if perName[k]<=25 then
        local parts={}
-       for i=1,math.min(select("#",...),5) do parts[i]=show((select(i,...))) end
+       for i=1,math.min(an,5) do parts[i]=show(args[i]) end
        add("OUT "..m.." "..nme.." ("..table.concat(parts,", ")..")")
       end
      end)
