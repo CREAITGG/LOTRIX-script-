@@ -80,6 +80,37 @@ local function hookRemote(d)
   end)
  end)
 end
+local outHooked=false
+-- يسجّل ما يرسله جهازك للسيرفر (قراءة فقط، يمرّر كل شيء كما هو)
+local function hookOutgoing()
+ if outHooked then return true end
+ local hm,gm=ext("hookmetamethod"),ext("getnamecallmethod")
+ if not hm or not gm then return false end
+ local nc=ext("newcclosure") or function(f) return f end
+ local old
+ local ok=pcall(function()
+  old=hm(game,"__namecall",nc(function(self,...)
+   if rec and alive then
+    local m=gm()
+    if m=="FireServer" or m=="InvokeServer" then
+     pcall(function()
+      local nme=tostring(self.Name)
+      local k="OUT "..nme
+      perName[k]=(perName[k] or 0)+1
+      if perName[k]<=25 then
+       local parts={}
+       for i=1,math.min(select("#",...),5) do parts[i]=show((select(i,...))) end
+       add("OUT "..m.." "..nme.." ("..table.concat(parts,", ")..")")
+      end
+     end)
+    end
+   end
+   return old(self,...)
+  end))
+ end)
+ outHooked=ok
+ return ok
+end
 local function hookChar(ch)
  local h=ch:WaitForChild("Humanoid",10)
  if not h then return end
@@ -133,6 +164,7 @@ local function startRec()
  if ls then for _,v in ipairs(ls:GetChildren()) do if v:IsA("ValueBase") then hooks[#hooks+1]=v.Changed:Connect(function(x) add("STAT "..v.Name.."="..show(x)) end) end end end
  local n=scanGuards()
  add("بدأ التسجيل — حراس مرصودون: "..n)
+ add("تسجيل ما يرسله جهازك للسيرفر (OUT): "..(hookOutgoing() and "يعمل" or "غير مدعوم في منفّذك"))
  if LP.Character then task.spawn(hookChar,LP.Character) end
  hooks[#hooks+1]=LP.CharacterAdded:Connect(function(ch) add("ME respawn") lastPos=nil task.spawn(hookChar,ch) end)
 end
