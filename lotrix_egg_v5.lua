@@ -199,12 +199,13 @@ end
 local function eggHandle(t)
  if type(t)~="table" then return end
  if not (t.AssetCategory or t.BoundsCFrame or t.Uid or t.Category) then return end
- local key=tostring(t.NestId or t.Uid or "x")
+ if not t.Uid and not t.NestId then return end
+ -- NestId (Slot_001...) يتكرر في كل المناطق، لذلك المفتاح هو Uid أو المنطقة+العش
+ local key=t.Uid and tostring(t.Uid) or (tostring(t.AreaId or "")..":"..tostring(t.NestId))
  local rec=S.ev.reg[key]
  if not rec then rec={data={}} S.ev.reg[key]=rec end
  for k,v in pairs(t) do rec.data[k]=v end
  rec.t=os.clock()
- if t.Uid and t.NestId then S.ev.reg[tostring(t.Uid)]=rec end
 end
 local function onEggEvent(...)
  local args={...}
@@ -383,7 +384,7 @@ local function scanEggs()
    seen[rec]=true
    local dta=rec.data
    local cf=dta.BoundsCFrame or dta.BottomCFrame
-   if typeof(cf)=="CFrame" and os.clock()-(rec.t or 0)<900 then
+   if typeof(cf)=="CFrame" and os.clock()-(rec.t or 0)<3600 and dta.State~="Carried" and dta.State~="GuardCarried" then
     local p=cf.Position
     local dup=false
     for _,e in ipairs(list) do if (e.pos-p).Magnitude<8 then dup=true break end end
@@ -393,7 +394,7 @@ local function scanEggs()
      local en=pet and pet[1] or tostring(cat or "Egg")
      local a=(dta.AreaId and tostring(dta.AreaId)) or nearestArea(p,root)
      list[#list+1]={pos=p,nameEn=en,nameAr=pet and pet[2] or ((cat and en) or "بيضة"),rar=pet and pet[3] and (RAR[pet[3]] or pet[3]),
-      rate=pet and pet[4],muts=nil,area=a,fromEvent=true,
+      rate=pet and pet[4],muts=nil,area=a,fromEvent=true,uid=dta.Uid and tostring(dta.Uid) or nil,state=dta.State,
       key=string.format("%s|%s|%d|%d",tostring(a),en,math.floor(p.X/4),math.floor(p.Z/4))}
     end
    end
@@ -788,6 +789,11 @@ local function walkTo(pos,stopDist,timeout,cancel)
  end
  return false
 end
+local function findAsk()
+ for _,d in ipairs(RepS:GetDescendants()) do
+  if d:IsA("RemoteFunction") and d.Name=="AskFieldEggCarry" then return d end
+ end
+end
 local function selEntry()
  for _,e in ipairs(S.eggs) do if e.key==S.sel then return e end end
 end
@@ -816,27 +822,35 @@ function F.steal(on)
    if cancel() then if not hadF then pcall(F.freeze,false) end return end
    local rr=getRoot()
    if rr and (rr.Position-tgt).Magnitude>12 then rr.CFrame=CFrame.new(tgt+Vector3.new(0,3,0)) rr.AssemblyLinearVelocity=Vector3.zero task.wait(.3) end
-   local pr=findStealPrompt(e)
-   if not pr then
-    notify("وصلت لكن لم أجد زر السرقة قرب البيضة — حدّث القائمة ثم جرّب","warn")
-    if not hadF then pcall(F.freeze,false) end
-    return
-   end
-   local fp=ext("fireproximityprompt")
-   if not fp then notify("منفّذك لا يدعم fireproximityprompt","err") if not hadF then pcall(F.freeze,false) end return end
    S.carry=false
    local got=false
-   for _=1,4 do
-    if cancel() then break end
-    pcall(function() pr.HoldDuration=0 end)
-    pcall(fp,pr)
-    local t0=os.clock()
-    while os.clock()-t0<1.5 and not S.carry do task.wait(.1) end
-    if S.carry then got=true break end
+   local ask=e.uid and findAsk()
+   if ask then
+    for _=1,3 do
+     if cancel() then break end
+     pcall(function() return ask:InvokeServer({Uid=e.uid}) end)
+     local t0=os.clock()
+     while os.clock()-t0<1.5 and not S.carry do task.wait(.1) end
+     if S.carry then got=true break end
+    end
+   end
+   if not got and not cancel() then
+    local pr=findStealPrompt(e)
+    local fp=ext("fireproximityprompt")
+    if pr and fp then
+     for _=1,3 do
+      if cancel() then break end
+      pcall(function() pr.HoldDuration=0 end)
+      pcall(fp,pr)
+      local t0=os.clock()
+      while os.clock()-t0<1.5 and not S.carry do task.wait(.1) end
+      if S.carry then got=true break end
+     end
+    end
    end
    if cancel() then if not hadF then pcall(F.freeze,false) end return end
    if not got then
-    notify("ضغطت زر السرقة لكن السيرفر لم يؤكد الحمل — راجع بيوضك أو اقترب أكثر","warn")
+    notify("لم يؤكد السيرفر الحمل — اقترب أكثر أو حدّث القائمة (قد تكون البيضة أُخذت)","warn")
     if not hadF then pcall(F.freeze,false) end
     return
    end
@@ -879,6 +893,32 @@ function F.report()
   if (d:IsA("Model") or d:IsA("BasePart")) and hasWord(d.Name,CFG.TrapWords) and not seen[d.Name] and #tn<15 then seen[d.Name]=true tn[#tn+1]=d.Name.." ["..d.ClassName.."]" end
  end
  L[#L+1]="trap-like names: "..table.concat(tn,", ")
+ -- أين تحتفظ اللعبة ببيانات البيض؟ (للاكتشاف)
+ if root then
+  local shown=0
+  for _,ar in ipairs(root:GetChildren()) do
+   local nests=ar:FindFirstChild("Nests")
+   if nests and shown<2 then
+    shown=shown+1
+    for _,nm in ipairs(nests:GetChildren()) do
+     local at={}
+     for k,v in pairs(nm:GetAttributes()) do at[#at+1]=tostring(k).."="..tostring(v) end
+     local ch={}
+     for _,c in ipairs(nm:GetChildren()) do ch[#ch+1]=c.Name.."["..c.ClassName.."]" end
+     L[#L+1]="nest "..nm:GetFullName().." attrs{"..table.concat(at,", ").."} children{"..table.concat(ch,", ").."}"
+    end
+   end
+  end
+ end
+ local ua,k=0,0
+ for _,d in ipairs(WS:GetDescendants()) do
+  k=k+1 if k>80000 then break end
+  if ua<12 and (d:IsA("Model") or d:IsA("BasePart")) and (d:GetAttribute("Uid")~=nil or d:GetAttribute("EggUid")~=nil or d:GetAttribute("NestId")~=nil) then
+   ua=ua+1
+   L[#L+1]="has-uid "..d:GetFullName()
+  end
+ end
+ L[#L+1]="ask remote: "..tostring(findAsk()~=nil)
  L[#L+1]="hidden alarms: "..table.concat(S.alarm.log,", ")
  L[#L+1]="-- events --"
  for _,s in ipairs(S.ev.raw) do L[#L+1]=s end
