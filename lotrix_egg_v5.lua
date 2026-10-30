@@ -612,7 +612,7 @@ function F.bossRoute(wait)
  return true
 end
 ---------------- إخفاء إنذار السرقة (محلي) ----------------
-local ALERTW={"alert","alarm","warn","stolen","thief","rouse","danger","siren","انذار","إنذار","تحذير","سرق"}
+local ALERTW={"alert","alarm","warn","stolen","thief","rouse","danger","siren","انذار","إنذار","تحذير","سرق","اركض","اهرب","chase","escape","vignette"}
 local SS=game:GetService("SoundService")
 S.alarm={untilT=0,log={},conns={},hooked={}}
 local function ours(d)
@@ -637,7 +637,8 @@ local function hideAlarm(d)
   alarmLog("صوت "..d.Name)
  elseif d:IsA("GuiObject") then
   local txt=(d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text or ""
-  if hasWord(d.Name,ALERTW) or hasWord(txt,ALERTW) then
+  local tt=string.gsub(txt,"%s","")
+  if hasWord(d.Name,ALERTW) or hasWord(txt,ALERTW) or tt=="!" or tt=="!!" or tt=="‼" then
    pcall(function() d.Visible=false end)
    alarmLog(d.Name)
   end
