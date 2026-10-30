@@ -223,6 +223,7 @@ local function onCarry(t)
  S.carry=(t.IsCarrying==true)
  if S.carry then
   S.carryAt=os.clock()
+  if S.bossOn then pcall(F.alarmWindow) end
   if S.bossOn and not S.steal.active then F.bossRoute() end
  end
 end
@@ -240,6 +241,10 @@ local function onPen(list)
 end
 local function hookEvents()
  for _,d in ipairs(RepS:GetDescendants()) do
+  if d:IsA("RemoteEvent") and d.Name=="Rouse" and not S.ev.hooked[d] then
+   S.ev.hooked[d]=true
+   pcall(function() track(d.OnClientEvent:Connect(function() if S.bossOn and F.alarmWindow then pcall(F.alarmWindow) end end)) end)
+  end
   if d:IsA("RemoteEvent") and d.Name=="CoinsGathered" and not S.ev.hooked[d] then
    S.ev.hooked[d]=true
    pcall(function() track(d.OnClientEvent:Connect(onPen)) end)
@@ -605,8 +610,79 @@ function F.bossRoute(wait)
  end
  return true
 end
+---------------- إخفاء إنذار السرقة (محلي) ----------------
+local ALERTW={"alert","alarm","warn","stolen","thief","rouse","danger","siren","انذار","إنذار","تحذير","سرق"}
+local SS=game:GetService("SoundService")
+S.alarm={untilT=0,log={},conns={},hooked={}}
+local function ours(d)
+ local o=d
+ for _=1,12 do
+  if not o then return false end
+  if o.Name==CFG.Name then return true end
+  o=o.Parent
+ end
+ return false
+end
+local function alarmLog(t)
+ local a=S.alarm
+ if #a.log<30 then a.log[#a.log+1]=t end
+ notify("أُخفي إنذار: "..t,"info")
+end
+local function hideAlarm(d)
+ local a=S.alarm
+ if not S.bossOn or os.clock()>a.untilT or ours(d) then return end
+ if d:IsA("Sound") then
+  pcall(function() d.Volume=0 d:Stop() end)
+  alarmLog("صوت "..d.Name)
+ elseif d:IsA("GuiObject") then
+  local txt=(d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text or ""
+  if hasWord(d.Name,ALERTW) or hasWord(txt,ALERTW) then
+   pcall(function() d.Visible=false end)
+   alarmLog(d.Name)
+  end
+ end
+end
+function F.alarmWindow()
+ local a=S.alarm
+ a.untilT=os.clock()+6
+ -- أصوات الإنذار التي تعمل الآن
+ for _,root in ipairs({SS,LP:FindFirstChild("PlayerGui")}) do
+  if root then
+   local n=0
+   for _,d in ipairs(root:GetDescendants()) do
+    n=n+1 if n>1500 then break end
+    if d:IsA("Sound") and d.IsPlaying and hasWord(d.Name,ALERTW) then hideAlarm(d) end
+   end
+  end
+ end
+end
+local function alarmHook(on)
+ local a=S.alarm
+ for _,c in ipairs(a.conns) do disc(c) end a.conns={}
+ a.hooked={}
+ if not on then return end
+ local pg=LP:FindFirstChild("PlayerGui")
+ for _,root in ipairs({pg,SS}) do
+  if root then
+   a.conns[#a.conns+1]=root.DescendantAdded:Connect(function(d) task.defer(hideAlarm,d) end)
+  end
+ end
+ -- عناصر موجودة مسبقاً قد يُظهرها اللعبة عند الإنذار
+ if pg then
+  local n=0
+  for _,d in ipairs(pg:GetDescendants()) do
+   n=n+1 if n>2500 then break end
+   if d:IsA("GuiObject") and not ours(d) and hasWord(d.Name,ALERTW) then
+    a.conns[#a.conns+1]=d:GetPropertyChangedSignal("Visible"):Connect(function()
+     if d.Visible then hideAlarm(d) end
+    end)
+   end
+  end
+ end
+end
 function F.boss(on)
  S.bossOn=on
+ pcall(alarmHook,on)
  if not on then
   local ok,m=F.freeze(false)
   return ok,"أُوقف نوم الزعيم — أُيقظ الحراس عندك","info"
@@ -803,6 +879,7 @@ function F.report()
   if (d:IsA("Model") or d:IsA("BasePart")) and hasWord(d.Name,CFG.TrapWords) and not seen[d.Name] and #tn<15 then seen[d.Name]=true tn[#tn+1]=d.Name.." ["..d.ClassName.."]" end
  end
  L[#L+1]="trap-like names: "..table.concat(tn,", ")
+ L[#L+1]="hidden alarms: "..table.concat(S.alarm.log,", ")
  L[#L+1]="-- events --"
  for _,s in ipairs(S.ev.raw) do L[#L+1]=s end
  local t=table.concat(L,"\n")
@@ -1009,7 +1086,7 @@ espF.Parent=host
 ---- الصفحة: الأدوات ----
 newPage("tools")
 section("الزعيم")
-toggleCard("نوم عميق للزعيم","تجميد شكلي عندك + مسار الانتقال عند السرقة (السيرفر هو من يقرر الملاحقة)",function(on) return F.boss(on) end)
+toggleCard("نوم عميق للزعيم","تجميد شكلي + مسار الانتقال + إخفاء إنذار السرقة عندك (السيرفر هو من يقرر الملاحقة)",function(on) return F.boss(on) end)
 section("الأرض")
 toggleCard("حذف الفخاخ","يحذف الفخاخ الآن وأي فخ جديد حتى لا تسقط البيضة",function(on) return F.traps(on) end)
 section("المال")
@@ -1155,7 +1232,7 @@ local function cleanup()
  alive=false
  S.steal.on=false S.steal.token=S.steal.token+1
  S.bossOn=false S.mon.on=false
- pcall(F.freeze,false) pcall(F.traps,false) pcall(clearEsp)
+ pcall(F.freeze,false) pcall(F.traps,false) pcall(clearEsp) pcall(alarmHook,false)
  for _,c in ipairs(conns) do disc(c) end
  pcall(function() espF:Destroy() end)
  pcall(function() gui:Destroy() end)
